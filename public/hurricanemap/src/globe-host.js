@@ -215,8 +215,9 @@ function ensureViewer(Cesium, background) {
   viewer.scene.globe.showGroundAtmosphere = true;
   viewer.scene.skyAtmosphere.show = true;
   window.__hmGlobeViewer = viewer;
-  viewer.scene.requestRenderMode = true;
-  viewer.scene.maximumRenderTimeChange = Infinity;
+  // On-demand rendering starved imagery tile loading and froze camera flights,
+  // leaving a black sphere, so the globe renders continuously while open.
+  viewer.scene.requestRenderMode = false;
 }
 
 function renderDataset(Cesium, dataset, showWindCones) {
