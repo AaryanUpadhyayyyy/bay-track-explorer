@@ -8,6 +8,7 @@ const CESIUM_CSS_URL = `${CESIUM_BASE_URL}Widgets/widgets.css`;
 // PING re-establishes it (see adoptParentOrigin) instead of failing closed.
 let parentOrigin = referrerOrigin(document.referrer);
 const ALLOWED_MESSAGES = new Set(['PING', 'INIT', 'TIMELINE', 'LAYERS', 'RESET', 'FOCUS']);
+const ENGINE_TIMEOUT_MS = 30_000;
 const MAX_SEGMENTS = 20_000;
 const MAX_CONES = 5_000;
 const MAX_TIMELINE = 10_000;
@@ -163,8 +164,18 @@ function loadCesium() {
     script.integrity = 'sha384-1G42k2yKVnUMrgZBHAlf+pQXOrpQdoo/lqzpebarn4Wamb2UgdZSZWtWEYfVP3sO';
     script.crossOrigin = 'anonymous';
     script.async = true;
-    script.onload = () => window.Cesium ? resolve(window.Cesium) : reject(new Error('Cesium global missing'));
+    // Without a deadline a stalled CDN leaves the panel on "loading" forever.
+    const timer = setTimeout(() => {
+      cesiumPromise = null;
+      reject(new Error('3D engine took too long to load'));
+    }, ENGINE_TIMEOUT_MS);
+    script.onload = () => {
+      clearTimeout(timer);
+      if (window.Cesium) resolve(window.Cesium);
+      else { cesiumPromise = null; reject(new Error('Cesium global missing')); }
+    };
     script.onerror = () => {
+      clearTimeout(timer);
       cesiumPromise = null;
       reject(new Error('Cesium CDN failed to load'));
     };
@@ -194,10 +205,18 @@ function ensureViewer(Cesium, background) {
     shouldAnimate: false,
   });
   viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString(background);
+  // Cesium's default imagery needs an Ion token; OpenStreetMap tiles need none,
+  // so the globe shows an actual Earth instead of a black sphere.
+  try {
+    viewer.imageryLayers.addImageryProvider(new Cesium.OpenStreetMapImageryProvider({
+      url: 'https://tile.openstreetmap.org/',
+    }));
+  } catch { /* imagery is optional; keep the base colour */ }
   viewer.scene.globe.showGroundAtmosphere = true;
   viewer.scene.skyAtmosphere.show = true;
-  viewer.scene.requestRenderMode = true;
-  viewer.scene.maximumRenderTimeChange = Infinity;
+  // On-demand rendering starved imagery tile loading and froze camera flights,
+  // leaving a black sphere, so the globe renders continuously while open.
+  viewer.scene.requestRenderMode = false;
 }
 
 function renderDataset(Cesium, dataset, showWindCones) {
