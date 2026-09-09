@@ -769,7 +769,8 @@ export default {
   'panel.loading': 'Ap chaje trajè, pwen kote li touche tè, ak kontèks enpak...',
   'panel.errorTitle': 'Dosye siklòn nan pa disponib.',
   'panel.errorDetail': 'Pwen ou chwazi a chaje, men trajè detaye HURDAT2 li a pa nan pakè done sa a.',
-  'panel.unnamedAtlantic': 'Tanpèt Atlantik san non nan {0}',
+  'panel.unnamedBayOfBengal': 'Siklòn san non nan Gòlf Bengal {0}',
+  'panel.unnamedArabianSea': 'Siklòn san non nan Lanmè Arabik {0}',  'panel.unnamedAtlantic': 'Tanpèt Atlantik san non nan {0}',
   'panel.unnamedPacific': 'Tanpèt Pasifik san non nan {0}',
 
   // Deklarasyon katastwòf FEMA

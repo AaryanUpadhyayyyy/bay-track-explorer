@@ -791,7 +791,8 @@ export default {
   'panel.loading': 'Cargando trayectoria, toques de tierra y contexto de impactos...',
   'panel.errorTitle': 'Registro del huracán no disponible.',
   'panel.errorDetail': 'El punto seleccionado cargó, pero su trayectoria detallada de HURDAT2 no está en este paquete de datos.',
-  'panel.unnamedAtlantic': 'Tormenta atlántica sin nombre de {0}',
+  'panel.unnamedBayOfBengal': 'Ciclón sin nombre de la bahía de Bengala de {0}',
+  'panel.unnamedArabianSea': 'Ciclón sin nombre del mar Arábigo de {0}',  'panel.unnamedAtlantic': 'Tormenta atlántica sin nombre de {0}',
   'panel.unnamedPacific': 'Tormenta del Pacífico sin nombre de {0}',
 
   // Declaraciones de desastre de FEMA

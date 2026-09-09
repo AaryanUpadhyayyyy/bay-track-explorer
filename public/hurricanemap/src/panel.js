@@ -192,7 +192,7 @@ function render(storm, landfall, allStorms, advisoryReplay = null, renderSeq = s
   const niceName = formatStormName(storm.name);
   const isUnnamed = !storm.name || storm.name === 'UNNAMED';
   const heading = isUnnamed
-    ? t(storm.basin === 'EP' ? 'panel.unnamedPacific' : 'panel.unnamedAtlantic', storm.year)
+    ? t(storm.basin === 'AS' ? 'panel.unnamedArabianSea' : 'panel.unnamedBayOfBengal', storm.year)
     : `${niceName} (${storm.year})`;
   const peakCat = windToCategory(storm.peak_wind_kt);
   const peakLabel = categoryLabel(peakCat);

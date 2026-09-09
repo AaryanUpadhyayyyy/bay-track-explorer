@@ -794,7 +794,8 @@ export default {
   'panel.loading': 'Loading track, landfalls, and impact context...',
   'panel.errorTitle': 'Storm record unavailable.',
   'panel.errorDetail': 'The selected map point loaded, but its detailed HURDAT2 track is missing from this data bundle.',
-  'panel.unnamedAtlantic': '{0} unnamed Atlantic storm',
+  'panel.unnamedBayOfBengal': '{0} unnamed Bay of Bengal cyclone',
+  'panel.unnamedArabianSea': '{0} unnamed Arabian Sea cyclone',  'panel.unnamedAtlantic': '{0} unnamed Atlantic storm',
   'panel.unnamedPacific': '{0} unnamed Pacific storm',
 
   // FEMA disaster declarations
