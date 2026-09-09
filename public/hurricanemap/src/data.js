@@ -1,0 +1,350 @@
+// WMO-retired Atlantic hurricane names: name→[years] for quick lookup.
+const RETIRED_LOOKUP = Object.freeze({
+  CAROL:[1954],HAZEL:[1954],CONNIE:[1955],DIANE:[1955],IONE:[1955],JANET:[1955],
+  AUDREY:[1957],DONNA:[1960],CARLA:[1961],HATTIE:[1961],FLORA:[1963],CLEO:[1964],
+  HILDA:[1964],BETSY:[1965],INEZ:[1966],BEULAH:[1967],CAMILLE:[1969],CELIA:[1970],
+  AGNES:[1972],CARMEN:[1974],FIFI:[1974],ELOISE:[1975],ANITA:[1977],DAVID:[1979],
+  FREDERIC:[1979],ALLEN:[1980],ALICIA:[1983],ELENA:[1985],GLORIA:[1985],
+  GILBERT:[1988],JOAN:[1988],HUGO:[1989],DIANA:[1990],KLAUS:[1990],BOB:[1991],
+  ANDREW:[1992],LUIS:[1995],MARILYN:[1995],OPAL:[1995],ROXANNE:[1995],CESAR:[1996],
+  FRAN:[1996],HORTENSE:[1996],GEORGES:[1998],MITCH:[1998],FLOYD:[1999],LENNY:[1999],
+  KEITH:[2000],ALLISON:[2001],IRIS:[2001],MICHELLE:[2001],ISIDORE:[2002],LILI:[2002],
+  FABIAN:[2003],ISABEL:[2003],JUAN:[2003],CHARLEY:[2004],FRANCES:[2004],IVAN:[2004],
+  JEANNE:[2004],DENNIS:[2005],KATRINA:[2005],RITA:[2005],STAN:[2005],WILMA:[2005],
+  DEAN:[2007],FELIX:[2007],NOEL:[2007],GUSTAV:[2008],IKE:[2008],PALOMA:[2008],
+  IGOR:[2010],TOMAS:[2010],IRENE:[2011],SANDY:[2012],INGRID:[2013],ERIKA:[2015],
+  JOAQUIN:[2015],MATTHEW:[2016],OTTO:[2016],HARVEY:[2017],IRMA:[2017],MARIA:[2017],
+  NATE:[2017],FLORENCE:[2018],MICHAEL:[2018],DORIAN:[2019],LORENZO:[2019],
+  LAURA:[2020],ETA:[2020],IOTA:[2020],IDA:[2021],FIONA:[2022],IAN:[2022],
+  IDALIA:[2023],LEE:[2023],BERYL:[2024],HELENE:[2024],MILTON:[2024],
+});
+
+function isRetired(name, year) {
+  const years = RETIRED_LOOKUP[(name || '').toUpperCase()];
+  return Array.isArray(years) && years.includes(year);
+}
+
+// Data loading + indexes for HurricaneMap.
+// landfalls.json — flat list of every US landfall event (one per L marker).
+// storms.json    — full track + metadata, keyed by storm id.
+// stats.json     — pre-computed roll-ups (by state, decade, year, category).
+// metadata.json  — generated data provenance, coverage, and source details.
+import { assertSupportedDataSchema } from './schema-contract.js';
+import { getDateLocale } from './i18n.js';
+import { convertWindKnots, presentCategory, roundMetric } from './metric-presenters.js';
+import { fetchWithTimeout, REQUEST_TIMEOUT_MS } from './network.js';
+
+const DATA = {
+  landfalls: [],
+  storms: [],          // populated lazily on first track-render
+  stormsById: new Map(),
+  stats: null,
+  metadata: null,
+  coverage: null,       // per-dataset archive coverage and lifecycle facts
+  impacts: null,       // storm_id -> raw + normalized Wikipedia impact fields
+  billions: null,      // storm_id -> NCEI billion-dollar disaster event (frozen at 2024)
+  billionsAvailable: false,
+  enso: null,          // year (string) -> ONI value
+  aoml: null,          // AOML detailed landfall ground-truth artifact
+};
+
+let stormsLoaded = false;
+let stormsPromise = null;
+let optionalLoaded = false;
+let optionalPromise = null;
+
+async function fetchJson(url, { optional = false, fallback = null, priority } = {}) {
+  try {
+    const init = priority ? { priority } : {};
+    const response = await fetchWithTimeout(url, init, REQUEST_TIMEOUT_MS.data);
+    if (!response.ok) throw new Error(`${url} returned HTTP ${response.status}`);
+    return await response.json();
+  } catch (error) {
+    if (optional) {
+      console.warn(`Optional dataset unavailable: ${url}`, error);
+      return fallback;
+    }
+    throw new Error(`Unable to load ${url}: ${error.message || error}`);
+  }
+}
+
+// The datasets the first paint blocks on. The map, the timeline, the header and
+// the filters read these four and nothing else, so this is the whole of what a
+// reader waits for before the atlas is usable.
+export async function loadInitial() {
+  const [lf, st, md, cv] = await Promise.all([
+    fetchJson('data/landfalls.json', { priority: 'high' }),
+    fetchJson('data/stats.json', { priority: 'high' }),
+    fetchJson('data/metadata.json', { optional: true, fallback: null }),
+    fetchJson('data/coverage.json', { priority: 'high' }),
+  ]);
+  if (!Array.isArray(lf)) throw new Error('landfalls.json did not contain an array');
+  if (!st || typeof st !== 'object') throw new Error('stats.json did not contain an object');
+  if (md) assertSupportedDataSchema(md);
+  DATA.landfalls = lf || [];
+  DATA.stats = st || { total_storms: 0, total_landfall_events: 0 };
+  DATA.metadata = md && typeof md === 'object' ? md : null;
+  DATA.coverage = cv && typeof cv === 'object' ? cv : null;
+  // Start the rest now so a panel opened a second later already has it, but do
+  // not hold the map for it. Nothing awaits this deliberately: every optional
+  // fetch resolves to its fallback rather than rejecting.
+  ensureOptionalData();
+  return DATA;
+}
+
+// Impacts, the AOML ground-truth artifact, the NCEI billion-dollar table and the
+// ONI series come to 460 KB and none of them paints anything. They feed the
+// storm panel, the statistics and season panels, the text report and the About
+// dialog, all of which are reached by an explicit action, so each of those
+// entry points waits on this instead of the first screen doing it for them.
+export function ensureOptionalData() {
+  if (optionalLoaded) return Promise.resolve(DATA);
+  if (optionalPromise) return optionalPromise;
+  optionalPromise = Promise.all([
+    fetchJson('data/impacts.json', { optional: true, fallback: {} }),
+    fetchJson('data/billions.json', { optional: true, fallback: null }),
+    fetchJson('data/enso.json', { optional: true, fallback: null }),
+    fetchJson('data/aoml-landfalls.json', { optional: true, fallback: null }),
+  ]).then(([im, bn, enso, aoml]) => {
+    DATA.impacts = im || {};
+    DATA.billions = bn && typeof bn === 'object' && !Array.isArray(bn) ? bn : {};
+    DATA.billionsAvailable = Boolean(bn && typeof bn === 'object' && !Array.isArray(bn));
+    DATA.enso = enso && typeof enso === 'object' ? enso : null;
+    DATA.aoml = aoml && typeof aoml === 'object' ? aoml : null;
+    optionalLoaded = true;
+    return DATA;
+  });
+  return optionalPromise;
+}
+
+export function getImpactsFor(stormId) {
+  return DATA.impacts?.[stormId] || null;
+}
+
+export function getBillionsFor(stormId) {
+  if (!stormId || stormId === '_meta') return null;
+  return DATA.billions?.[stormId] || null;
+}
+
+export function isDatasetAvailable(datasetId) {
+  if (datasetId === 'ncei-billions') return DATA.billionsAvailable;
+  return true;
+}
+
+function loadStormsViaWorker() {
+  return new Promise((resolve) => {
+    const worker = new Worker('src/storms-worker.js', { type: 'module' });
+    worker.addEventListener('message', (e) => {
+      worker.terminate();
+      if (e.data.ok && Array.isArray(e.data.storms)) resolve(e.data.storms);
+      else resolve(null);
+    });
+    worker.addEventListener('error', () => { worker.terminate(); resolve(null); });
+    worker.postMessage('load');
+  });
+}
+
+async function fetchStormsCompressed() {
+  if (typeof DecompressionStream !== 'function') return fetchJson('data/storms.json');
+  try {
+    const res = await fetchWithTimeout('data/storms.json.gz', {}, REQUEST_TIMEOUT_MS.data);
+    if (!res.ok) throw new Error(res.status);
+    const ds = new DecompressionStream('gzip');
+    const reader = res.body.pipeThrough(ds).getReader();
+    const chunks = [];
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+    }
+    const total = chunks.reduce((n, a) => n + a.length, 0);
+    const merged = new Uint8Array(total);
+    let off = 0;
+    for (const c of chunks) { merged.set(c, off); off += c.length; }
+    return JSON.parse(new TextDecoder().decode(merged));
+  } catch { return fetchJson('data/storms.json'); }
+}
+
+export function ensureStormsLoaded() {
+  if (stormsLoaded) return Promise.resolve(DATA);
+  if (stormsPromise) return stormsPromise;
+  const loader = typeof Worker !== 'undefined'
+    ? loadStormsViaWorker().then(storms => storms || fetchStormsCompressed())
+    : fetchStormsCompressed();
+  stormsPromise = loader
+    .then(storms => {
+      if (!Array.isArray(storms)) {
+        throw new Error('storms.json did not contain an array');
+      }
+      DATA.storms = storms;
+      DATA.stormsById = new Map(storms.map(s => [s.id, s]));
+      stormsLoaded = true;
+      return DATA;
+    })
+    .catch(e => {
+      console.error('Failed to load storms data:', e);
+      DATA.storms = [];
+      DATA.stormsById = new Map();
+      stormsLoaded = false;
+      stormsPromise = null;
+      return DATA;
+    });
+  return stormsPromise;
+}
+
+export function getStorm(id) {
+  return DATA.stormsById.get(id);
+}
+
+export function getAllStorms() {
+  return DATA.storms;
+}
+
+export function getLandfalls() {
+  return DATA.landfalls;
+}
+
+export function getStats() {
+  return DATA.stats;
+}
+
+export function getMetadata() {
+  return DATA.metadata;
+}
+
+export function getCoverage() {
+  return DATA.coverage;
+}
+
+export function getAomlValidation() {
+  return DATA.aoml?.validation || null;
+}
+
+export function getCoverageYearRange(metadata = DATA.metadata, {
+  fallbackMin = 1851,
+  fallbackMax = 2025,
+} = {}) {
+  const range = metadata?.coverage?.year_range;
+  const a = Number(range?.[0]);
+  const b = Number(range?.[1]);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return [fallbackMin, fallbackMax];
+  return [Math.min(a, b), Math.max(a, b)];
+}
+
+export function getEnsoForYear(year) {
+  if (!DATA.enso) return null;
+  const entry = DATA.enso[String(year)];
+  if (!entry) return null;
+  // A bare number was an older shape of data/enso.json. All 76 entries the
+  // builder emits today are {oni, phase}, and an entry that is neither falls
+  // through to null below, which is what an unreadable entry should do.
+  if (typeof entry.oni === 'number') {
+    const LABELS = { 'el-nino': 'El Nino', 'la-nina': 'La Nina', 'neutral': 'Neutral' };
+    return { oni: entry.oni, phase: LABELS[entry.phase] || 'Neutral' };
+  }
+  return null;
+}
+
+// Filter helpers
+export function filterLandfalls(landfalls, filters) {
+  return landfalls.filter(lf => {
+    if (lf.year < filters.yearMin || lf.year > filters.yearMax) return false;
+    if (!categoryAllowed(lf.category, filters.categories)) return false;
+    if (filters.state && lf.state !== filters.state) return false;
+    if (filters.retiredOnly && !isRetired(lf.name, lf.year)) return false;
+    return true;
+  });
+}
+
+function categoryAllowed(cat, allowed) {
+  // Validate category is in expected range [-1 (unknown), 0 (TD), TS-5]
+  if (typeof cat !== 'number' || cat < -1 || cat > 5) {
+    return false; // Reject invalid categories
+  }
+  if (cat <= 0) return allowed.has('ts');
+  return allowed.has(String(cat));
+}
+
+// Search index for the search box.
+export function searchStorms(query, landfalls) {
+  if (!query) return [];
+  const q = query.trim().toLowerCase();
+  if (q.length < 2) return [];
+  // Year-only search.
+  if (/^\d{4}$/.test(q)) {
+    const yr = parseInt(q, 10);
+    const seen = new Set();
+    const out = [];
+    for (const lf of landfalls) {
+      if (lf.year !== yr) continue;
+      if (seen.has(lf.storm_id)) continue;
+      seen.add(lf.storm_id);
+      out.push(lf);
+      if (out.length >= 25) break;
+    }
+    return out;
+  }
+  const seen = new Set();
+  const out = [];
+  for (const lf of landfalls) {
+    const tag = `${lf.name.toLowerCase()} ${lf.year} ${(lf.state || '').toLowerCase()}`;
+    if (!tag.includes(q)) continue;
+    if (seen.has(lf.storm_id)) continue;
+    seen.add(lf.storm_id);
+    out.push(lf);
+    if (out.length >= 25) break;
+  }
+  return out;
+}
+
+// Saffir-Simpson display helpers
+export function categoryLabel(cat) {
+  return presentCategory(cat);
+}
+
+/** Numeric intensity rank for the dataset's non-monotonic TD=0, TS=-1 encoding. */
+export function categoryStrength(cat) {
+  if (cat === 0) return 0;
+  if (cat === -1) return 1;
+  if (Number.isInteger(cat) && cat >= 1 && cat <= 5) return cat + 1;
+  return -1;
+}
+
+export function categoryClass(cat) {
+  if (cat <= 0) return 'cat-ts';
+  return `cat-${cat}`;
+}
+
+// Palette-aware. Reads the active palette from settings.js so a single user
+// toggle re-themes every dot, track segment, chart bar, and panel pill.
+import { getPaletteColor } from './settings.js';
+export function categoryColor(cat) {
+  return getPaletteColor(cat);
+}
+
+export function windToCategory(kt) {
+  if (kt == null || !Number.isFinite(kt) || kt < 34) return 0;
+  if (kt < 64) return -1;
+  if (kt < 83) return 1;
+  if (kt < 96) return 2;
+  if (kt < 113) return 3;
+  if (kt < 137) return 4;
+  return 5;
+}
+
+export function ktToMph(kt) {
+  return roundMetric(convertWindKnots(kt, 'mph'));
+}
+
+// `undefined` here means the browser's locale, which is not the one the reader
+// chose in this app: a Spanish reader on an English-language browser got
+// "Aug 24, 2005" inside an otherwise Spanish panel, and it was baked into the
+// localized accessibility baselines as if it were correct.
+export function formatTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return d.toLocaleString(getDateLocale(), {
+    year: 'numeric', month: 'short', day: 'numeric',
+    hour: '2-digit', minute: '2-digit', timeZone: 'UTC',
+  }) + ' UTC';
+}

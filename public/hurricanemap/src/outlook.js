@@ -1,0 +1,293 @@
+// NHC Graphical Tropical Weather Outlook disturbance points.
+// The fixed KMZ endpoints are fetched through the same-origin Cloudflare
+// allowlist. The 2026 `zerox` style is rendered as a gray X, distinct from
+// the yellow low-risk X used for non-zero formation chances.
+//
+// The KMZ sends no CORS header, so a deployment without the relay reads the
+// same disturbances from NHC's CORS-open summary MapServer instead. That
+// service publishes the formation chances and the risk category but not the
+// discussion paragraph, so those markers carry a shorter tooltip.
+
+import { escapeHtml } from './html-utils.js';
+import { t } from './i18n.js';
+import { fetchWithTimeout, REQUEST_TIMEOUT_MS } from './network.js';
+import {
+  beginOptionalFeed,
+  completeOptionalFeed,
+  failOptionalFeed,
+  idleOptionalFeed,
+} from './optional-feeds.js';
+import { mountOptionalFeedStatus } from './optional-feed-ui.js';
+import { nhcProxyAvailable, nhcProxyUrl } from './nhc-proxy.js';
+import { fetchSummaryOutlookPoints } from './nhc-summary.js';
+import { MISSING_METRIC } from './metric-presenters.js';
+
+const BASINS = ['atl', 'pac', 'cpac'];
+const CACHE_MS = 6 * 60 * 60 * 1000;
+const KMZ_SOURCE = 'NOAA NHC Tropical Weather Outlook';
+const SUMMARY_SOURCE = 'NOAA NHC tropical weather summary GIS';
+// One entry per basin for the KMZ path, plus one for the whole summary
+// service, which publishes every basin in a single layer.
+const SUMMARY_CACHE_KEY = 'summary';
+const cache = new Map();
+
+let layerGroup = null;
+let layerMap = null;
+let legendEl = null;
+let renderGeneration = 0;
+let statusEl = null;
+
+function decodeXml(value) {
+  return String(value || '')
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+    .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(Number.parseInt(code, 16)))
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .trim();
+}
+
+function tagValue(block, tag) {
+  const match = block.match(new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${tag}>`, 'i'));
+  return decodeXml(match?.[1] || '');
+}
+
+export function parseOutlookKml(kml, basin = '') {
+  const points = [];
+  const placemarks = String(kml || '').match(/<Placemark(?:\s[^>]*)?>[\s\S]*?<\/Placemark>/gi) || [];
+  for (const placemark of placemarks) {
+    const pointBlock = placemark.match(/<Point(?:\s[^>]*)?>[\s\S]*?<\/Point>/i)?.[0];
+    if (!pointBlock) continue;
+    const coordinateText = tagValue(pointBlock, 'coordinates');
+    const [lon, lat] = coordinateText.split(',').map(Number);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+    const fields = {};
+    for (const match of placemark.matchAll(/<Data\s+name=["']([^"']+)["'][^>]*>[\s\S]*?<value(?:\s[^>]*)?>([\s\S]*?)<\/value>[\s\S]*?<\/Data>/gi)) {
+      fields[match[1]] = decodeXml(match[2]);
+    }
+    const style = tagValue(placemark, 'styleUrl').replace(/^#/, '').toLowerCase();
+    const category = String(fields['7day_category'] || fields['2day_category'] || '').toLowerCase();
+    const risk = style === 'zerox' || category === 'nearzero'
+      ? 'near-zero'
+      : style === 'highx' || category === 'high'
+        ? 'high'
+        : style === 'medx' || category === 'medium'
+          ? 'medium'
+          : 'low';
+    points.push({
+      basin,
+      disturbance: fields.Disturbance || '',
+      lat,
+      lon,
+      risk,
+      twoDay: fields['2day_percentage'] || '',
+      sevenDay: fields['7day_percentage'] || '',
+      discussion: fields.Discussion || '',
+    });
+  }
+  return points;
+}
+
+export async function extractKmlFromKmz(input) {
+  const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let eocd = -1;
+  for (let offset = bytes.length - 22; offset >= Math.max(0, bytes.length - 65557); offset -= 1) {
+    if (view.getUint32(offset, true) === 0x06054b50) {
+      eocd = offset;
+      break;
+    }
+  }
+  if (eocd < 0) throw new Error('KMZ end-of-directory record not found');
+  const entryCount = view.getUint16(eocd + 10, true);
+  let offset = view.getUint32(eocd + 16, true);
+  const decoder = new TextDecoder();
+  for (let index = 0; index < entryCount; index += 1) {
+    if (view.getUint32(offset, true) !== 0x02014b50) throw new Error('Invalid KMZ central directory');
+    const method = view.getUint16(offset + 10, true);
+    const compressedSize = view.getUint32(offset + 20, true);
+    const filenameLength = view.getUint16(offset + 28, true);
+    const extraLength = view.getUint16(offset + 30, true);
+    const commentLength = view.getUint16(offset + 32, true);
+    const localOffset = view.getUint32(offset + 42, true);
+    const filename = decoder.decode(bytes.subarray(offset + 46, offset + 46 + filenameLength));
+    offset += 46 + filenameLength + extraLength + commentLength;
+    if (!filename.toLowerCase().endsWith('.kml')) continue;
+    if (view.getUint32(localOffset, true) !== 0x04034b50) throw new Error('Invalid KMZ local header');
+    const localNameLength = view.getUint16(localOffset + 26, true);
+    const localExtraLength = view.getUint16(localOffset + 28, true);
+    const dataOffset = localOffset + 30 + localNameLength + localExtraLength;
+    const compressed = bytes.slice(dataOffset, dataOffset + compressedSize);
+    if (method === 0) return decoder.decode(compressed);
+    if (method !== 8 || typeof DecompressionStream !== 'function') {
+      throw new Error('KMZ compression is unsupported in this browser');
+    }
+    const stream = new Blob([compressed]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+    return decoder.decode(await new Response(stream).arrayBuffer());
+  }
+  throw new Error('KMZ contains no KML document');
+}
+
+async function fetchBasin(basin, force) {
+  const cached = cache.get(basin);
+  if (!force && cached && Date.now() - cached.fetchedAt < CACHE_MS) return cached.points;
+  const response = await fetchWithTimeout(
+    nhcProxyUrl(`/nhc/outlook/${basin}.kmz`),
+    { cache: 'no-cache' },
+    REQUEST_TIMEOUT_MS.active,
+  );
+  if (!response.ok) {
+    const error = new Error(`NHC ${basin} outlook returned ${response.status}`);
+    error.responseStatus = response.status;
+    throw error;
+  }
+  const kml = await extractKmlFromKmz(await response.arrayBuffer());
+  const points = parseOutlookKml(kml, basin);
+  cache.set(basin, { fetchedAt: Date.now(), points });
+  return points;
+}
+
+function isCacheFresh(key, force) {
+  const cached = cache.get(key);
+  return Boolean(!force && cached && Date.now() - cached.fetchedAt < CACHE_MS);
+}
+
+async function fetchSummaryBasins(force) {
+  if (isCacheFresh(SUMMARY_CACHE_KEY, force)) return cache.get(SUMMARY_CACHE_KEY).points;
+  const points = await fetchSummaryOutlookPoints();
+  cache.set(SUMMARY_CACHE_KEY, { fetchedAt: Date.now(), points });
+  return points;
+}
+
+// Where the relay exists the KMZ is the richer product, because it carries the
+// disturbance discussion the MapServer omits. Where it does not, or where the
+// relay answered for no basin at all, the MapServer is the only source a
+// browser can still reach.
+async function loadOutlookPoints(force) {
+  let relayFailure = null;
+  // The active poll has already found out whether the relay exists. Asking
+  // again would 404 once per basin and log three console errors to learn it.
+  if (await nhcProxyAvailable()) {
+    const cacheOrigin = BASINS.every(basin => isCacheFresh(basin, force)) ? 'memory' : 'network';
+    const results = await Promise.allSettled(BASINS.map(basin => fetchBasin(basin, force)));
+    if (results.some(result => result.status === 'fulfilled')) {
+      return {
+        points: results.flatMap(result => result.status === 'fulfilled' ? result.value : []),
+        source: KMZ_SOURCE,
+        cacheOrigin,
+      };
+    }
+    relayFailure = results.find(result => result.status === 'rejected')?.reason || null;
+  }
+  const cacheOrigin = isCacheFresh(SUMMARY_CACHE_KEY, force) ? 'memory' : 'network';
+  try {
+    return { points: await fetchSummaryBasins(force), source: SUMMARY_SOURCE, cacheOrigin };
+  } catch (error) {
+    // Report whichever failure the user could act on: a relay that broke is
+    // the more specific answer, and the summary service is the backstop.
+    const reported = relayFailure || error;
+    return { failed: true, error: reported, responseStatus: reported?.responseStatus || 0 };
+  }
+}
+
+function ensureLayer(map) {
+  if (layerGroup && layerMap === map) return;
+  if (layerGroup && layerMap) layerMap.removeLayer(layerGroup);
+  layerMap = map;
+  layerGroup = window.L.layerGroup().addTo(map);
+}
+
+function updateLegend(points) {
+  if (!points.length) {
+    if (legendEl) legendEl.hidden = true;
+    return;
+  }
+  if (!legendEl) {
+    legendEl = document.createElement('div');
+    legendEl.id = 'nhc-outlook-legend';
+    legendEl.className = 'nhc-outlook-legend glass';
+    legendEl.setAttribute('role', 'group');
+    document.body.appendChild(legendEl);
+  }
+  legendEl.setAttribute('aria-label', t('outlook.legendTitle'));
+  legendEl.innerHTML = `<strong>${t('outlook.legendTitle')}</strong><span><b class="nhc-outlook-x nhc-outlook-x--near-zero">×</b>${t('outlook.nearZero')}</span><span><b class="nhc-outlook-x nhc-outlook-x--low">×</b>${t('outlook.nonZero')}</span>`;
+  legendEl.hidden = false;
+}
+
+function ensureStatus(map) {
+  if (!statusEl || !document.body.contains(statusEl)) {
+    statusEl = document.createElement('div');
+    statusEl.id = 'nhc-outlook-status';
+    statusEl.className = 'optional-feed-status-overlay glass';
+    document.body.appendChild(statusEl);
+  }
+  mountOptionalFeedStatus(statusEl, 'outlook', {
+    onRetry: () => renderTropicalOutlook({ map, enabled: true, force: true }),
+  });
+}
+
+export async function renderTropicalOutlook({ map, enabled = true, force = false } = {}) {
+  if (!map || !enabled) {
+    clearTropicalOutlook();
+    idleOptionalFeed('outlook');
+    return { status: 'idle', pointCount: 0 };
+  }
+  const generation = ++renderGeneration;
+  const request = beginOptionalFeed('outlook', { cacheOrigin: 'network' });
+  ensureLayer(map);
+  ensureStatus(map);
+  const loaded = await loadOutlookPoints(force);
+  if (generation !== renderGeneration) return { status: 'stale', pointCount: 0, requestId: request.requestId };
+  if (loaded.failed) {
+    const result = {
+      status: 'error',
+      pointCount: 0,
+      error: loaded.error,
+      responseStatus: loaded.responseStatus,
+    };
+    failOptionalFeed('outlook', { ...result, requestId: request.requestId });
+    return result;
+  }
+  const { points, source, cacheOrigin } = loaded;
+  layerGroup.clearLayers();
+  for (const point of points) {
+    const marker = window.L.marker([point.lat, point.lon], {
+      icon: window.L.divIcon({
+        className: 'nhc-outlook-marker',
+        html: `<span class="nhc-outlook-x nhc-outlook-x--${point.risk}" aria-hidden="true">×</span>`,
+        iconSize: [44, 44],
+        iconAnchor: [22, 22],
+      }),
+      keyboard: true,
+      title: `${t('outlook.disturbance')} ${point.disturbance}`.trim(),
+    });
+    const chance = `${t('outlook.twoDay')}: ${point.twoDay || MISSING_METRIC} · ${t('outlook.sevenDay')}: ${point.sevenDay || MISSING_METRIC}`;
+    marker.bindTooltip(`<strong>${escapeHtml(`${t('outlook.disturbance')} ${point.disturbance}`.trim())}</strong><br>${escapeHtml(chance)}${point.discussion ? `<br>${escapeHtml(point.discussion)}` : ''}`, { direction: 'top', sticky: true });
+    layerGroup.addLayer(marker);
+  }
+  updateLegend(points);
+  const result = {
+    status: points.length ? 'rendered' : 'empty',
+    pointCount: points.length,
+    cacheOrigin,
+    source,
+  };
+  completeOptionalFeed('outlook', {
+    empty: result.status === 'empty',
+    itemCount: points.length,
+    cacheOrigin,
+    source,
+    requestId: request.requestId,
+  });
+  return result;
+}
+
+export function clearTropicalOutlook() {
+  renderGeneration += 1;
+  if (layerGroup) layerGroup.clearLayers();
+  if (legendEl) legendEl.hidden = true;
+  if (statusEl) statusEl.hidden = true;
+}

@@ -1,0 +1,71 @@
+# AI agent working files (local only — never commit)
+CLAUDE.md
+CODEX_CHANGELOG.md
+.claude/
+.codex/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+.python-version
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Backups
+*.bak
+*.bak.*
+
+# Build / dist
+dist/
+build/
+# An empty tmp/ has sat at the repo root since 2025-07-25, invisible only
+# because it was empty. The first file written there would have shown up in
+# git status and been picked up by git add -A.
+tmp/
+.tmp-bundle/
+*.tgz
+node_modules/
+npm-debug.log*
+
+# Playwright / dev artifacts
+.playwright-mcp/
+smoke-*.png
+test-results/
+
+.tmp-pw/
+.tmp-pid.txt
+audit-*.png
+.tmp-stormevents/
+# One-off browser probes written next to the code they measure. One of these
+# was committed on 2026-09-07 and had to be deleted in the next commit.
+.probe-*.mjs
+*.bak
+
+# Markdown files local-only (except README)
+*.md
+!README.md
+!docs/
+!docs/**/*.md
+!LICENSE.md
+
+# AI config
+AGENTS.md
+.ai/
+PROJECT_CONTEXT.md
+CONTINUATION_PROMPT.md
+
+# Runtime logs
+server.log
+*.log
+data/raw/
+.cache/

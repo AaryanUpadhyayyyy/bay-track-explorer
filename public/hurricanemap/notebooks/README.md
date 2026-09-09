@@ -1,0 +1,98 @@
+# HurricaneMap Jupyter Notebooks
+
+Analysis templates and starter code for exploring HurricaneMap's NOAA HURDAT2 dataset.
+
+## Notebooks
+
+### `analysis-starter.ipynb` — Data Analysis Getting Started
+
+A comprehensive introduction to analyzing U.S. hurricane landfalls with Python + pandas + matplotlib.
+
+**Features:**
+- Load HURDAT2 landfall data from JSON files
+- Filter by year range, Saffir-Simpson category, or state
+- Compute climatology: trends, averages, extremes
+- Visualize geographic and temporal distributions
+- Generate time-series analysis (10-year rolling averages)
+- Export results to CSV
+
+**Run online (no installation):**  
+[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/SysAdminDoc/HurricaneMap/blob/main/notebooks/analysis-starter.ipynb)
+
+**Run locally:**
+```bash
+cd HurricaneMap
+python -m pip install -r requirements-notebooks.txt
+python -m notebook notebooks/analysis-starter.ipynb
+```
+
+The release gate runs the same notebook offline in two disposable output directories and checks that both runs produce identical CSV bytes and the checked-in provenance contract:
+
+```bash
+npm run test:notebook
+```
+
+The command validates 595 storms, 759 landfall events, 374 hurricane-strength landfalls, and the release-manifest hashes before executing. If the notebook runtime is not installed the gate fails and names the missing packages: a check that did not run is not a check that passed. Set `HURRICANEMAP_NOTEBOOK=skip` to record a deliberate skip, which still verifies the data contract and shows up as SKIPPED in `npm run build` rather than as a pass. The pinned environment needs Python 3.12 or newer.
+
+**What you'll learn:**
+- How to structure landfall data for analysis
+- Pandas filtering and groupby workflows
+- Creating publication-ready charts
+- Exporting data for further research
+
+## Data Files
+
+The notebooks expect HurricaneMap's data files in the `data/` directory:
+- `data/landfalls.json` — 759 landfall events (flat list)
+- `data/storms.json` — Full track + metadata for every storm
+- `data/metadata.json` — generator, source-lock, coverage, and output provenance
+- `data/release-manifest.json` — byte and SHA-256 identities for the shipped release
+- `data/impacts.json` — Deaths and damage figures (partial coverage)
+
+**For Google Colab:** The notebook includes code to download these files automatically.
+
+## Data Attribution
+
+All notebooks must include proper attribution for NOAA HURDAT2:
+
+> Historical hurricane landfall data sourced from NOAA's National Hurricane Center HURDAT2 database (https://www.nhc.noaa.gov/data/).
+
+See the main [LICENSE.md](../LICENSE.md) for full citation formats.
+
+## Example Analyses
+
+**Quick starts to get you going:**
+
+```python
+# Recent major hurricanes in Florida
+df_florida_majors = df[(df['year'] >= 1980) & (df['category'] >= 3) & (df['state'] == 'Florida')]
+
+# Category distribution
+df['category'].value_counts().sort_index()
+
+# Average landfall wind speed by decade
+df.groupby(df['year'] // 10 * 10)['wind'].mean()
+
+# Busiest months for landfalls
+df['month'].value_counts().sort_index()
+```
+
+## Contributing
+
+Want to add a new notebook? Please:
+1. Use this structure as a template
+2. Include clear markdown explanations for each cell
+3. Add proper data attribution
+4. Test in both local and Google Colab environments
+5. Ensure all data files load correctly
+
+## Resources
+
+- **NOAA HURDAT2 documentation:** https://www.nhc.noaa.gov/data/hurdat/
+- **Pandas guide:** https://pandas.pydata.org/docs/
+- **Matplotlib tutorial:** https://matplotlib.org/stable/tutorials/
+- **Google Colab:** https://colab.research.google.com/
+
+---
+
+**Last Updated:** May 2026

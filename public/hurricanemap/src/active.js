@@ -1,0 +1,494 @@
+// Active storm tracking — pulls NHC's live CurrentStorms.json feed at boot,
+// hourly while storms are active, quieter when the feed is empty, and with
+// explicit backoff when the proxy/NHC path is delayed or rate-limited. When storms are active, renders their
+// advisory tracks + cones of uncertainty in a distinctive electric-blue
+// style.
+
+import { getMap } from './map.js';
+import { escapeHtml, safeExternalHref } from './html-utils.js';
+import {
+  activeAdvisoryKey,
+  activeFeedStatusText,
+  computeActivePollDelay,
+  isPotentialTropicalCyclone,
+  pronunciationUrlForActiveStorm,
+} from './active-polling.js';
+import {
+  clearOfficialForecastCache,
+  clearOfficialForecastContext,
+  renderOfficialForecastContext,
+} from './cone.js';
+import { hideGoesRealtimeContext, latestStormPoint, renderGoesRealtimeContext } from './goes-realtime.js';
+import { clearTropicalAlerts, renderTropicalAlerts } from './alerts.js';
+import { bearingDeg, compassLabel, kmToMi } from './metrics.js';
+import { haversineKm } from './geodesy.js';
+import { loadUserPoint } from './user-point.js';
+import { clearPeakSurge, clearPeakSurgeCache, renderPeakSurge } from './peak-surge.js';
+import { getSetting } from './settings.js';
+import { t } from './i18n.js';
+import { fetchWithTimeout, REQUEST_TIMEOUT_MS } from './network.js';
+import { renderTropicalOutlook } from './outlook.js';
+import { renderMarineWarnings } from './marine-warnings.js';
+import {
+  beginOptionalFeed,
+  completeOptionalFeed,
+  failOptionalFeed,
+  idleOptionalFeed,
+  isOptionalFeedRequestCurrent,
+  reportOptionalFeedResult,
+} from './optional-feeds.js';
+import { mountOptionalFeedStatus } from './optional-feed-ui.js';
+import { isMissingProxyRoute, nhcProxyUrl, reportNhcProxyAvailability } from './nhc-proxy.js';
+import { fetchSummaryActiveStorms } from './nhc-summary.js';
+
+const L = window.L;
+
+// www.nhc.noaa.gov sends no CORS header on CurrentStorms.json, so the worker
+// relay is the only way a browser can read that file. corsproxy.io used to
+// stand in and now answers 401 to everyone, which turned the fallback into a
+// second error rather than a rescue. Where there is no relay, the storms
+// themselves still come through: NHC's tropical weather summary MapServer does
+// send a CORS header, and src/nhc-summary.js reshapes its forecast points into
+// the same records CurrentStorms.json would have supplied.
+
+const CURRENT_STORMS_SOURCE = 'NOAA NHC CurrentStorms';
+const SUMMARY_SOURCE = 'NOAA NHC tropical weather summary GIS';
+
+let layerGroup = null;
+let badgeEl = null;
+let lastStorms = null;
+let lastAdvisoryKey = '';
+let lastSuccessfulFetchAt = null;
+let nextPollAt = null;
+let pollTimer = null;
+let pollingStarted = false;
+let consecutiveFailures = 0;
+let activeStatusEl = null;
+// Settled once per page load by the first probe that gets an untagged 404.
+let relayAbsent = false;
+
+function ensureActiveFeedStatus() {
+  if (!activeStatusEl || !document.body.contains(activeStatusEl)) {
+    activeStatusEl = document.createElement('div');
+    activeStatusEl.id = 'active-feed-status';
+    activeStatusEl.className = 'optional-feed-status-overlay glass';
+    document.body.appendChild(activeStatusEl);
+  }
+  mountOptionalFeedStatus(activeStatusEl, 'active', { onRetry: fetchAndRender });
+}
+
+export async function startActiveStormPolling() {
+  if (pollingStarted) return;
+  pollingStarted = true;
+  ensureActiveFeedStatus();
+
+  // Listen for active-storm context toggle changes.
+  document.addEventListener('hm-settings:change', (e) => {
+    if (
+      e.detail.key === 'nhcForecastCone' ||
+      e.detail.key === 'goesRealtime'
+    ) {
+      if (lastStorms) {
+        renderActive(lastStorms);
+      }
+    }
+    if (e.detail.key === 'nhcOutlook' || e.detail.key === 'marineWarnings' || e.detail.key === 'marineHorizon') {
+      renderOperationalLayers();
+    }
+  });
+  document.addEventListener('hm-locale:change', () => {
+    if (lastStorms) renderActive(lastStorms);
+    renderOperationalLayers();
+  });
+
+  // Before the operational layers: the active poll is what discovers whether
+  // this deployment has the /nhc/ relay, and the layers wait on that answer
+  // rather than each rediscovering it with its own 404.
+  try {
+    await fetchAndRender();
+  } finally {
+    // Backstop. The layers await that answer, so anything that stops the poll
+    // before it reports would otherwise leave them waiting for ever. The first
+    // report wins, so this only fires when nothing else got there.
+    reportNhcProxyAvailability(true);
+  }
+  await renderOperationalLayers();
+}
+
+async function fetchAndRender() {
+  const request = beginOptionalFeed('active', { nextRetryAt: nextPollAt });
+  const result = await fetchCurrentStorms();
+  if (!isOptionalFeedRequestCurrent('active', request.requestId)) return;
+  const storms = result.storms || [];
+  const countForStatus = result.ok ? storms.length : (lastStorms?.length || 0);
+  const state = result.ok ? 'ok' : (result.status === 429 ? 'rate-limit' : 'error');
+
+  if (!result.ok) {
+    consecutiveFailures += 1;
+    const delay = computeActivePollDelay({
+      ok: false,
+      status: result.status,
+      stormCount: countForStatus,
+      failureCount: consecutiveFailures,
+    });
+    scheduleNextPoll(delay);
+    failOptionalFeed('active', {
+      responseStatus: result.status,
+      error: result.error,
+      source: result.source,
+      nextRetryAt: nextPollAt,
+      requestId: request.requestId,
+    });
+    ensureBadge(countForStatus, {
+      state,
+      fetchedAt: lastSuccessfulFetchAt,
+      nextPollAt,
+      status: result.status,
+    });
+    return;
+  }
+
+  consecutiveFailures = 0;
+  lastSuccessfulFetchAt = Date.now();
+  lastStorms = storms;
+  const advisoryKey = activeAdvisoryKey(storms);
+  const advisoryChanged = Boolean(advisoryKey && advisoryKey !== lastAdvisoryKey);
+  lastAdvisoryKey = advisoryKey;
+
+  const delay = computeActivePollDelay({
+    ok: true,
+    stormCount: storms.length,
+  });
+  scheduleNextPoll(delay);
+  completeOptionalFeed('active', {
+    empty: storms.length === 0,
+    itemCount: storms.length,
+    source: result.source,
+    completedAt: lastSuccessfulFetchAt,
+    nextRetryAt: nextPollAt,
+    requestId: request.requestId,
+  });
+  ensureBadge(storms.length, {
+    state,
+    fetchedAt: lastSuccessfulFetchAt,
+    nextPollAt,
+    advisoryChanged,
+  });
+
+  await renderOperationalLayers();
+
+  if (!storms.length) {
+    clearActiveLayers();
+    hideGoesRealtimeContext();
+    idleOptionalFeed('forecast');
+    idleOptionalFeed('alerts');
+    idleOptionalFeed('surge');
+    idleOptionalFeed('goes');
+    clearOfficialForecastContext();
+    clearOfficialForecastCache();
+    clearTropicalAlerts();
+    clearPeakSurge();
+    clearPeakSurgeCache();
+    return;
+  }
+  await renderActive(storms);
+}
+
+async function renderOperationalLayers() {
+  const map = getMap();
+  const outlookEnabled = getSetting('nhcOutlook');
+  const marineEnabled = getSetting('marineWarnings');
+  const marineHorizon = getSetting('marineHorizon');
+  const [outlookResult, marineResult] = await Promise.all([
+    renderTropicalOutlook({ map, enabled: outlookEnabled }),
+    renderMarineWarnings({ map, enabled: marineEnabled, horizon: marineHorizon }),
+  ]);
+  return { outlookResult, marineResult };
+}
+
+async function tryFetch(url) {
+  const response = await fetchWithTimeout(url, { cache: 'no-cache' }, REQUEST_TIMEOUT_MS.active);
+  if (response.status === 429) {
+    return { ok: false, status: 429, storms: [], missingRoute: false, source: CURRENT_STORMS_SOURCE };
+  }
+  if (!response.ok) {
+    return {
+      ok: false,
+      status: response.status || 0,
+      storms: [],
+      missingRoute: isMissingProxyRoute(response),
+      source: CURRENT_STORMS_SOURCE,
+    };
+  }
+  const data = await response.json();
+  return {
+    ok: true,
+    status: response.status,
+    storms: (data && data.activeStorms) || [],
+    missingRoute: false,
+    source: CURRENT_STORMS_SOURCE,
+  };
+}
+
+// No relay in front of this deployment, so read NHC's own CORS-open summary
+// service instead. It carries the current fix, intensity and advisory number
+// for every active system; only the advisory and discussion URLs are missing,
+// and the storm card drops the links it has no URL for.
+async function fetchSummaryStorms() {
+  try {
+    const storms = await fetchSummaryActiveStorms();
+    return { ok: true, status: 200, storms, missingRoute: false, source: SUMMARY_SOURCE };
+  } catch (error) {
+    // A failure here is a failing source, not an absent one: there is
+    // something to retry, so this must not report the feed unsupported.
+    return {
+      ok: false,
+      status: error?.responseStatus || 0,
+      storms: [],
+      missingRoute: false,
+      error,
+      source: SUMMARY_SOURCE,
+    };
+  }
+}
+
+async function fetchCurrentStorms() {
+  // The relay's absence is a property of the deployment, not of this poll. The
+  // first probe settles it; asking again every hour would reproduce the same
+  // console 404 for the life of the tab.
+  if (relayAbsent) return fetchSummaryStorms();
+  try {
+    const result = await tryFetch(nhcProxyUrl('/nhc/CurrentStorms.json'));
+    // First one through the door tells the other feeds what it found. A
+    // network error is not proof of anything, and neither is a 404 the relay
+    // itself served: only an untagged 404 means the route is absent.
+    reportNhcProxyAvailability(!result.missingRoute);
+    if (!result.missingRoute) return result;
+    relayAbsent = true;
+  } catch (error) {
+    reportNhcProxyAvailability(true);
+    return { ok: false, status: 0, storms: [], error, source: CURRENT_STORMS_SOURCE };
+  }
+  return fetchSummaryStorms();
+}
+
+function scheduleNextPoll(delayMs) {
+  if (pollTimer) clearTimeout(pollTimer);
+  nextPollAt = Date.now() + delayMs;
+  pollTimer = setTimeout(fetchAndRender, delayMs);
+}
+
+function clearActiveLayers() {
+  if (layerGroup) {
+    getMap().removeLayer(layerGroup);
+    layerGroup = null;
+  }
+}
+
+function updateAppBadge(count) {
+  try {
+    if (count > 0 && navigator.setAppBadge) navigator.setAppBadge(count);
+    else if (navigator.clearAppBadge) navigator.clearAppBadge();
+  } catch { /* not installed as PWA or API unavailable */ }
+}
+
+function ensureBadge(count, {
+  state = 'ok',
+  fetchedAt = null,
+  nextPollAt: scheduledAt = null,
+  status = 0,
+  advisoryChanged = false,
+} = {}) {
+  if (!badgeEl) {
+    badgeEl = document.createElement('div');
+    badgeEl.id = 'active-storm-badge';
+    badgeEl.className = 'active-badge glass';
+    badgeEl.setAttribute('role', 'status');
+    badgeEl.setAttribute('aria-live', 'polite');
+    document.body.appendChild(badgeEl);
+  }
+
+  updateAppBadge(count);
+
+  const shouldShow = count > 0 || state === 'error' || state === 'rate-limit';
+  if (!shouldShow) {
+    badgeEl.hidden = true;
+    badgeEl.removeAttribute('data-state');
+    return;
+  }
+
+  const mainText = count > 0
+    ? t(count === 1 ? 'status.activeStorm' : 'status.activeStorms', count)
+    : t(state === 'rate-limit' ? 'status.feedRateLimited' : 'status.feedDelayed');
+  const statusText = activeFeedStatusText({
+    state,
+    stormCount: count,
+    fetchedAt,
+    nextPollAt: scheduledAt,
+    status,
+  });
+  const links = count > 0 ? `
+      <a class="ab-link" href="https://www.tropicaltidbits.com/storminfo/" target="_blank" rel="noopener" title="${t('active.spaghettiTitle')}">${t('active.spaghettiModels')}</a>
+      <a class="ab-link" href="https://www.trackthetropics.com/" target="_blank" rel="noopener" title="${t('active.spaghettiLabel')}">${t('active.spaghettiTracks')}</a>
+    ` : '';
+
+  badgeEl.hidden = false;
+  badgeEl.dataset.state = advisoryChanged ? 'updated' : state;
+  badgeEl.setAttribute('aria-label', `${mainText}. ${statusText}`);
+  badgeEl.innerHTML = `
+      <span class="ab-pulse"></span>
+      <span class="ab-main">
+        <span class="ab-text">${escapeHtml(mainText)}</span>
+        <span class="ab-status">${escapeHtml(statusText)}</span>
+      </span>
+      ${links}
+    `;
+}
+
+/** " · 512 mi NE of you" for a disclosed session or expiring remembered point. */
+function distanceFromUser([stormLat, stormLon]) {
+  try {
+    const point = loadUserPoint();
+    if (!Number.isFinite(point?.lat) || !Number.isFinite(point?.lon)) return '';
+    const km = haversineKm(point.lat, point.lon, stormLat, stormLon);
+    const dir = compassLabel(bearingDeg(point.lat, point.lon, stormLat, stormLon));
+    return ` · ${Math.round(kmToMi(km))} mi ${dir} of you`;
+  } catch {
+    return '';
+  }
+}
+
+function activeStormDisplayName(storm) {
+  const name = String(storm?.name || '').trim();
+  if (name && name.toUpperCase() !== 'UNNAMED') return name;
+  const number = String(storm?.binNumber || storm?.id || '').match(/\d{1,2}/)?.[0] || '';
+  if (isPotentialTropicalCyclone(storm)) {
+    return `${t('active.ptc')}${number ? ` ${Number(number)}` : ''}`;
+  }
+  return number ? `${t('active.storm')} ${Number(number)}` : t('active.storm');
+}
+
+const NHC_LINK_HOSTS = ['www.nhc.noaa.gov', 'nhc.noaa.gov'];
+
+export function activeStormCardElement(storm, currentPoint, doc = globalThis.document) {
+  if (!doc?.createElement) throw new Error('A DOM document is required to build an active-storm popup.');
+  const name = activeStormDisplayName(storm);
+  const classification = isPotentialTropicalCyclone(storm)
+    ? t('active.ptc')
+    : String(storm.classification || '').trim();
+  const intensity = storm.intensity == null ? NaN : Number(storm.intensity);
+  const links = [
+    [safeExternalHref(storm.publicAdvisory?.url, { protocols: ['https:'], hosts: NHC_LINK_HOSTS }), t('active.advisory')],
+    [safeExternalHref(storm.forecastDiscussion?.url, { protocols: ['https:'], hosts: NHC_LINK_HOSTS }), t('active.discussion')],
+    [safeExternalHref(pronunciationUrlForActiveStorm(storm), { protocols: ['https:'], hosts: NHC_LINK_HOSTS }), t('active.pronunciation')],
+    [safeExternalHref('https://www.nhc.noaa.gov/rip-currents/map.html', { protocols: ['https:'], hosts: NHC_LINK_HOSTS }), t('active.ripCurrents')],
+  ].filter(([url]) => url);
+
+  const article = doc.createElement('article');
+  article.className = 'active-storm-card';
+
+  const heading = doc.createElement('h3');
+  heading.textContent = name;
+  article.appendChild(heading);
+
+  const summary = doc.createElement('p');
+  summary.textContent = [
+    classification,
+    Number.isFinite(intensity) ? `${intensity} kt` : '',
+    Array.isArray(currentPoint) && currentPoint.every(Number.isFinite)
+      ? `${currentPoint[0].toFixed(1)}, ${currentPoint[1].toFixed(1)}`
+      : '',
+  ].filter(Boolean).join(' · ');
+  article.appendChild(summary);
+
+  const nav = doc.createElement('nav');
+  nav.setAttribute('aria-label', t('active.links'));
+  for (const [url, label] of links) {
+    const anchor = doc.createElement('a');
+    anchor.href = url;
+    anchor.target = '_blank';
+    anchor.rel = 'noopener';
+    anchor.textContent = label;
+    nav.appendChild(anchor);
+  }
+  article.appendChild(nav);
+  return article;
+}
+
+async function renderActive(storms) {
+  const map = getMap();
+  if (layerGroup) map.removeLayer(layerGroup);
+  layerGroup = L.layerGroup();
+
+  for (const s of storms) {
+    // CurrentStorms.json exposes the current fix, not forecast/best-track
+    // point arrays. Official observed/forecast tracks and cone geometry are
+    // rendered below from the NHC FeatureServer.
+    const point = latestStormPoint(s);
+    const cur = point ? [point.lat, point.lon] : null;
+    if (cur) {
+      const ptc = isPotentialTropicalCyclone(s);
+      const displayName = activeStormDisplayName(s);
+      L.circleMarker(cur, {
+        radius: 8, color: '#11111b', weight: 2,
+        fillColor: ptc ? '#cba6f7' : '#89b4fa', fillOpacity: 0.95,
+        dashArray: ptc ? '4 3' : null,
+      }).bindTooltip(
+        escapeHtml(`${displayName}${s.classification ? ' · ' + (ptc ? t('active.ptc') : s.classification) : ''}${s.intensity ? ' · ' + s.intensity + ' kt' : ''}${distanceFromUser(cur)}`),
+        { direction: 'top' },
+      ).bindPopup(activeStormCardElement(s, cur), { className: 'active-storm-popup' }).addTo(layerGroup);
+    }
+  }
+  layerGroup.addTo(map);
+
+  const officialConeEnabled = getSetting('nhcForecastCone');
+  let forecastRequest = null;
+  let alertsRequest = null;
+  let surgeRequest = null;
+  if (officialConeEnabled) {
+    forecastRequest = beginOptionalFeed('forecast');
+    alertsRequest = beginOptionalFeed('alerts');
+    surgeRequest = beginOptionalFeed('surge');
+  } else {
+    idleOptionalFeed('forecast');
+    idleOptionalFeed('alerts');
+    idleOptionalFeed('surge');
+  }
+  const forecastResult = await renderOfficialForecastContext(storms, {
+    map,
+    enabled: officialConeEnabled,
+  });
+  reportOptionalFeedResult('forecast', forecastResult, { requestId: forecastRequest?.requestId });
+
+  // 2026 cone standard: coastal + inland tropical watches/warnings travel
+  // with the official cone toggle.
+  const alertsResult = await renderTropicalAlerts(storms, {
+    map,
+    enabled: officialConeEnabled,
+  });
+  reportOptionalFeedResult('alerts', alertsResult, { requestId: alertsRequest?.requestId });
+
+  // Peak Storm Surge forecast (published during surge watches/warnings;
+  // empty otherwise) — same toggle as the official cone context.
+  const surgeResult = await renderPeakSurge(storms, {
+    map,
+    enabled: officialConeEnabled,
+  });
+  reportOptionalFeedResult('surge', surgeResult, { requestId: surgeRequest?.requestId });
+
+  const goesEnabled = getSetting('goesRealtime');
+  if (goesEnabled) {
+    const goesRequest = beginOptionalFeed('goes');
+    const goesResult = await renderGoesRealtimeContext(storms, {
+      map,
+      enabled: true,
+      requestId: goesRequest.requestId,
+    });
+    if (goesResult.status !== 'rendered') reportOptionalFeedResult('goes', goesResult, { requestId: goesRequest.requestId });
+  } else {
+    hideGoesRealtimeContext();
+    idleOptionalFeed('goes');
+  }
+
+}
+

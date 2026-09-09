@@ -1,0 +1,1051 @@
+import {
+  getFatalityCount,
+  getNominalDamageUsd,
+} from './impact-utils.js';
+import { windToCategory } from './data.js';
+import { csvEscape } from './csv.js';
+import { presentNumber, MISSING_METRIC } from './metric-presenters.js';
+import { buildCitation, citationCommentLines } from './citation.js';
+import {
+  haversineKm as geodesicDistanceKm,
+  initialBearingDeg,
+  pointToSegmentProjectionKm,
+} from './geodesy.js';
+
+// Derived intensity metrics + spatial queries.
+//
+// All functions here are pure: given a storm's track array (HURDAT2-shaped
+// records with `t` ISO timestamp, `wind` kt, `pres` mb, `lat`, `lon`), they
+// compute a single derived value or structured result. No side effects.
+//
+// Authored 2026-05-03 for HurricaneMap v0.4.0 to surface ACE, rapid
+// intensification windows, and closest-pass distances to U.S. coastal cities.
+
+const KM_TO_MI = 0.621371;
+const RI_THRESHOLD_KT = 30;      // standard NHC RI definition
+const RI_WINDOW_HOURS = 24;
+const TS_THRESHOLD_KT = 34;      // ACE only counts obs ≥ TS-force
+export const STORM_SIMILARITY_VECTOR_LENGTH = 8;
+const DEFAULT_STORM_VECTOR_STATS = {
+  wind_max: 185, wind_min: 35,
+  landfalls_max: 7, landfalls_min: 0,
+  track_km_max: 20000, track_km_min: 500,
+  speed_max: 60, speed_min: 2,
+  ri_max: 120, ri_min: 0,
+  ace_max: 100, ace_min: 0,
+  decay_max: 50, decay_min: -5,
+};
+
+/** Accumulated Cyclone Energy.
+ *  ACE = Σ(v² / 10⁴) over all 6-hourly obs where v ≥ 34 kt.
+ *  Returned in 10⁴ kt² units (the conventional "ACE units"); typical
+ *  Atlantic season is ~100, a major hurricane alone is ~10-30. */
+export function computeACE(track) {
+  if (!Array.isArray(track) || track.length === 0) return { value: 0, obs_count: 0 };
+  const terms = [];
+  let count = 0;
+  for (const r of track) {
+    if (r.wind == null || r.wind < TS_THRESHOLD_KT) continue;
+    // HURDAT2 records on synoptic 6-hour times. Skip the rare interpolated
+    // landfall obs (rec === 'L' but t not on 0/6/12/18 UTC) so we don't
+    // double-count.
+    const d = new Date(r.t);
+    const h = d.getUTCHours();
+    const m = d.getUTCMinutes();
+    if (h % 6 !== 0 || m !== 0) continue;
+    terms.push((r.wind * r.wind) / 1e4);
+    count++;
+  }
+  // Math.sumPrecise adds without intermediate rounding, so the total does not
+  // depend on the order the observations arrive in. Baseline 2026-04-10, so
+  // engines below the floor (Node 24 among them) take the ordinary sum, which
+  // is what this did before and is correct to the precision anyone reads.
+  const ace = Math.sumPrecise ? Math.sumPrecise(terms) : terms.reduce((sum, term) => sum + term, 0);
+  return { value: ace, obs_count: count };
+}
+
+/** Find the strongest 24-hour rapid-intensification window in a track.
+ *  Returns the window with the largest wind gain ≥ 30 kt, or null if
+ *  no qualifying window exists. Both endpoints must have observed
+ *  (non-null) wind values — we don't interpolate. */
+export function findRapidIntensification(track) {
+  if (!Array.isArray(track) || track.length < 2) return null;
+  let best = null;
+  for (let i = 0; i < track.length; i++) {
+    if (track[i].wind == null) continue;
+    const t0 = new Date(track[i].t).getTime();
+    const w0 = track[i].wind;
+    for (let j = i + 1; j < track.length; j++) {
+      if (track[j].wind == null) continue;
+      const t1 = new Date(track[j].t).getTime();
+      const dh = (t1 - t0) / 3600000;
+      if (dh > RI_WINDOW_HOURS + 0.5) break; // past 24h, stop
+      if (dh < RI_WINDOW_HOURS - 0.5) continue; // not yet 24h
+      const dw = track[j].wind - w0;
+      if (dw >= RI_THRESHOLD_KT) {
+        if (!best || dw > best.delta_kt) {
+          best = {
+            from_idx: i,
+            to_idx: j,
+            from_t: track[i].t,
+            to_t: track[j].t,
+            from_wind: w0,
+            to_wind: track[j].wind,
+            delta_kt: dw,
+            hours: dh,
+          };
+        }
+      }
+    }
+  }
+  return best;
+}
+
+/** Hardcoded list of U.S. + nearby coastal cities for closest-pass queries.
+ *  Curated for hurricane relevance (Atlantic + Gulf + Pacific NEPAC reach). */
+export const COASTAL_CITIES = [
+  // Atlantic / Gulf US
+  { name: 'Miami, FL',          lat: 25.7617,  lon:  -80.1918 },
+  { name: 'Key West, FL',       lat: 24.5551,  lon:  -81.7800 },
+  { name: 'Tampa, FL',          lat: 27.9506,  lon:  -82.4572 },
+  { name: 'Jacksonville, FL',   lat: 30.3322,  lon:  -81.6557 },
+  { name: 'Daytona Beach, FL',  lat: 29.2108,  lon:  -81.0228 },
+  { name: 'Pensacola, FL',      lat: 30.4213,  lon:  -87.2169 },
+  { name: 'Mobile, AL',         lat: 30.6954,  lon:  -88.0399 },
+  { name: 'New Orleans, LA',    lat: 29.9511,  lon:  -90.0715 },
+  { name: 'Galveston, TX',      lat: 29.3013,  lon:  -94.7977 },
+  { name: 'Houston, TX',        lat: 29.7604,  lon:  -95.3698 },
+  { name: 'Corpus Christi, TX', lat: 27.8006,  lon:  -97.3964 },
+  { name: 'Brownsville, TX',    lat: 25.9018,  lon:  -97.4975 },
+  // Atlantic Eastern Seaboard
+  { name: 'Savannah, GA',       lat: 32.0809,  lon:  -81.0912 },
+  { name: 'Charleston, SC',     lat: 32.7765,  lon:  -79.9311 },
+  { name: 'Wilmington, NC',     lat: 34.2257,  lon:  -77.9447 },
+  { name: 'Cape Hatteras, NC',  lat: 35.2509,  lon:  -75.5288 },
+  { name: 'Norfolk, VA',        lat: 36.8508,  lon:  -76.2859 },
+  { name: 'Washington, DC',     lat: 38.9072,  lon:  -77.0369 },
+  { name: 'New York, NY',       lat: 40.7128,  lon:  -74.0060 },
+  { name: 'Boston, MA',         lat: 42.3601,  lon:  -71.0589 },
+  // Caribbean / outlying US
+  { name: 'San Juan, PR',       lat: 18.4655,  lon:  -66.1057 },
+  // NEPAC reach
+  { name: 'Honolulu, HI',       lat: 21.3099,  lon: -157.8581 },
+  { name: 'Hilo, HI',           lat: 19.7297,  lon: -155.0900 },
+  { name: 'San Diego, CA',      lat: 32.7157,  lon: -117.1611 },
+  { name: 'Cabo San Lucas, MX', lat: 22.8905,  lon: -109.9167 },
+];
+
+/** Great-circle distance in km between two lat/lon points (haversine). */
+function haversineKm(lat1, lon1, lat2, lon2) {
+  return geodesicDistanceKm(lat1, lon1, lat2, lon2);
+}
+
+export function kmToMi(km) {
+  return km * KM_TO_MI;
+}
+
+/** Initial great-circle bearing from point 1 to point 2, degrees 0-360. */
+export function bearingDeg(lat1, lon1, lat2, lon2) {
+  return initialBearingDeg(lat1, lon1, lat2, lon2);
+}
+
+const COMPASS_8 = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+
+/** Eight-point compass label for a bearing in degrees. */
+export function compassLabel(deg) {
+  if (!Number.isFinite(deg)) return '';
+  return COMPASS_8[Math.round(((deg % 360) + 360) % 360 / 45) % 8];
+}
+
+function interpolateTrackPoint(start, end, projectedPoint, fraction, startIdx, endIdx) {
+  const point = {
+    ...start,
+    lat: projectedPoint[1],
+    lon: projectedPoint[0],
+    interpolated: true,
+    segment_start_idx: startIdx,
+    segment_end_idx: endIdx,
+    segment_fraction: fraction,
+  };
+  for (const field of ['wind', 'pres']) {
+    if (Number.isFinite(start[field]) && Number.isFinite(end[field])) {
+      point[field] = start[field] + (end[field] - start[field]) * fraction;
+    }
+  }
+  const startTime = Date.parse(start.t);
+  const endTime = Date.parse(end.t);
+  if (Number.isFinite(startTime) && Number.isFinite(endTime)) {
+    point.t = new Date(startTime + (endTime - startTime) * fraction).toISOString();
+  }
+  return point;
+}
+
+/** Closest approach of a storm track to a target lat/lon.
+ *  Returns the closest segment/point index + distance (km, mi) + the
+ *  interpolated observation at that location. Returns null if no usable
+ *  track coordinates exist. */
+export function closestApproach(track, targetLat, targetLon) {
+  if (!Array.isArray(track) || track.length === 0
+    || !Number.isFinite(Number(targetLat)) || !Number.isFinite(Number(targetLon))) return null;
+  let bestIdx = null;
+  let bestKm = Infinity;
+  let bestPoint = null;
+  let bestSegment = null;
+  let previous = null;
+
+  const consider = (distanceKm, idx, point, segment = null) => {
+    if (!Number.isFinite(distanceKm) || distanceKm >= bestKm) return;
+    bestKm = distanceKm;
+    bestIdx = idx;
+    bestPoint = point;
+    bestSegment = segment;
+  };
+
+  for (let i = 0; i < track.length; i++) {
+    const r = track[i];
+    if (!Number.isFinite(Number(r?.lat)) || !Number.isFinite(Number(r?.lon))) {
+      previous = null;
+      continue;
+    }
+    const km = haversineKm(r.lat, r.lon, targetLat, targetLon);
+    consider(km, i, r);
+
+    if (previous) {
+      const projection = pointToSegmentProjectionKm(
+        targetLat,
+        targetLon,
+        [previous.record.lon, previous.record.lat],
+        [r.lon, r.lat],
+      );
+      const fraction = projection.fraction;
+      const atStart = fraction == null || fraction <= 1e-9;
+      const atEnd = fraction != null && fraction >= 1 - 1e-9;
+      const point = atStart
+        ? previous.record
+        : atEnd
+          ? r
+          : interpolateTrackPoint(
+            previous.record,
+            r,
+            projection.point,
+            fraction,
+            previous.index,
+            i,
+          );
+      const idx = atEnd || (fraction != null && fraction > 0.5) ? i : previous.index;
+      consider(projection.distance_km, idx, point, {
+        start_idx: previous.index,
+        end_idx: i,
+        fraction,
+      });
+    }
+    previous = { index: i, record: r };
+  }
+  if (bestKm === Infinity) return null;
+  const result = {
+    idx: bestIdx,
+    distance_km: bestKm,
+    distance_mi: kmToMi(bestKm),
+    track_point: bestPoint,
+  };
+  if (bestSegment) result.segment = bestSegment;
+  return result;
+}
+
+/** Compute empirical return periods for a given city across all historical storms.
+ *  For each category (1, 3, 5), counts the number of storms whose track passed
+ *  within 50 km (31 mi) of the city at that intensity or stronger, then computes
+ *  the average years between such events.
+ *  Returns { cat1_years, cat3_years, cat5_years } with null for "never" cases.
+ */
+export function computeCityReturnPeriods(city, allStorms) {
+  const RADIUS_KM = 50;
+  const stormsByCategory = { 1: [], 3: [], 5: [] };
+
+  // One event per storm per tier. A segment-aware closest approach avoids
+  // missing a city between two six-hourly fixes and keeps multi-pass storms
+  // from contributing duplicate years.
+  for (const storm of allStorms) {
+    const approach = closestApproach(storm.track, city.lat, city.lon);
+    if (!approach || approach.distance_km > RADIUS_KM) continue;
+    const category = windToCategory(approach.track_point?.wind);
+    if (category >= 1) stormsByCategory[1].push(storm.year);
+    if (category >= 3) stormsByCategory[3].push(storm.year);
+    if (category >= 5) stormsByCategory[5].push(storm.year);
+  }
+  
+  // Compute return periods (years between events)
+  const computeReturnPeriod = (events) => {
+    if (events.length === 0) return null;
+    if (events.length === 1) return null; // Need at least 2 events
+    const sorted = events.sort((a, b) => a - b);
+    const intervals = [];
+    for (let i = 1; i < sorted.length; i++) {
+      intervals.push(sorted[i] - sorted[i - 1]);
+    }
+    const mean = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+    return Math.round(mean * 10) / 10; // 1 decimal place
+  };
+  
+  return {
+    cat1_years: computeReturnPeriod(stormsByCategory[1]),
+    cat3_years: computeReturnPeriod(stormsByCategory[3]),
+    cat5_years: computeReturnPeriod(stormsByCategory[5]),
+    cat1_count: stormsByCategory[1].length,
+    cat3_count: stormsByCategory[3].length,
+    cat5_count: stormsByCategory[5].length,
+  };
+}
+
+/** Format a number with thousand-separators + N fixed decimals. */
+export function formatNumber(n, decimals = 0) {
+  return presentNumber(n, decimals);
+}
+
+/** Build an export payload for a storm. Returns three string variants. */
+// A storm status, a state name or a storm name can begin with a character a
+// spreadsheet reads as a formula. A latitude cannot, and guarding it would
+// prefix an apostrophe to a number and break the column.
+function csvCell(value) {
+  return csvEscape(value, { preventFormula: typeof value === 'string' });
+}
+
+export function buildExports(storm) {
+  const safeName = (storm.name && storm.name !== 'UNNAMED' ? storm.name : 'unnamed').toLowerCase();
+  const baseFilename = `hurricanemap-${storm.id}-${safeName}-${storm.year}`;
+  const citation = buildCitation();
+
+  return {
+    csv: { filename: `${baseFilename}.csv`, mime: 'text/csv', body: exportCSV(storm, citation) },
+    csv_publication: { filename: `${baseFilename}-publication.csv`, mime: 'text/csv', body: exportCSVPublication(storm, citation) },
+    geojson: { filename: `${baseFilename}.geojson`, mime: 'application/geo+json', body: exportGeoJSON(storm, citation) },
+    kml: { filename: `${baseFilename}.kml`, mime: 'application/vnd.google-earth.kml+xml', body: exportKML(storm, citation) },
+  };
+}
+
+function exportCSV(storm, citation = buildCitation()) {
+  const rows = [['time_utc', 'lat', 'lon', 'wind_kt', 'pres_mb', 'status', 'category', 'is_landfall']];
+  const lfTimes = new Set((storm.us_landfalls || []).map(lf => lf.t));
+  for (const r of storm.track) {
+    rows.push([
+      r.t,
+      r.lat ?? '',
+      r.lon ?? '',
+      r.wind ?? '',
+      r.pres ?? '',
+      r.status ?? '',
+      windToCategory(r.wind),
+      lfTimes.has(r.t) ? '1' : '0',
+    ]);
+  }
+  return [...citationCommentLines(citation), '', ...rows.map(r => r.map(csvCell).join(','))].join('\n');
+}
+
+function exportCSVPublication(storm, citation = buildCitation()) {
+  // Publication-ready CSV with metadata header and data dictionary
+  const safeName = storm.name && storm.name !== 'UNNAMED' ? storm.name : 'Unnamed';
+  const headerLines = [
+    `# HurricaneMap Publication Export`,
+    `# Storm: ${safeName} (${storm.year})`,
+    `# Storm ID: ${storm.id}`,
+    `# Export Date: ${new Date().toISOString().split('T')[0]}`,
+    `# Source: NOAA NHC HURDAT2 Atlantic/Eastern Pacific Best Track Database`,
+    `# License: Public domain (NOAA data) | Code: MIT`,
+    `#`,
+    `# DATA DICTIONARY`,
+    `# time_utc: ISO 8601 timestamp of synoptic observation (0/6/12/18 UTC)`,
+    `# lat: Latitude of storm center (decimal degrees, -90 to 90)`,
+    `# lon: Longitude of storm center (decimal degrees, -180 to 180)`,
+    `# wind_kt: Maximum sustained wind speed (knots, from HURDAT2)`,
+    `# pres_mb: Minimum central pressure (millibars; null before 1870s)`,
+    `# status: 'TD'=Tropical Depression, 'TS'=Tropical Storm, 'HU'=Hurricane`,
+    `# category: Saffir-Simpson category (-1=TS, 0=unknown/incomplete, 1-5)`,
+    `# is_landfall: 1 if center crossed U.S. coastline at this observation`,
+    `#`,
+    `# METHODOLOGY`,
+    `# - Wind speed categories use operational Saffir-Simpson thresholds (1971+)`,
+    `# - Pre-1851 storms excluded; data spans 1851-${new Date().getFullYear()}`,
+    `# - Landfalls include both explicit (L marker) and inferred detections`,
+    `# - Pre-aircraft (pre-1944) and pre-satellite (pre-1960s) data are less complete`,
+    `# - For citations and complete methodology, see https://github.com/SysAdminDoc/HurricaneMap`,
+    `#`,
+    ...citationCommentLines(citation),
+    `#`,
+  ];
+  
+  const rows = [['time_utc', 'lat', 'lon', 'wind_kt', 'pres_mb', 'status', 'category', 'is_landfall']];
+  const lfTimes = new Set((storm.us_landfalls || []).map(lf => lf.t));
+  for (const r of storm.track) {
+    rows.push([
+      r.t,
+      r.lat ?? '',
+      r.lon ?? '',
+      r.wind ?? '',
+      r.pres ?? '',
+      r.status ?? '',
+      windToCategory(r.wind),
+      lfTimes.has(r.t) ? '1' : '0',
+    ]);
+  }
+  
+  const dataLines = rows.map(r => r.map(csvCell).join(',')).join('\n');
+  return headerLines.join('\n') + '\n' + dataLines;
+}
+
+function exportGeoJSON(storm, citation = buildCitation()) {
+  const trackCoords = storm.track
+    .filter(r => r.lat != null && r.lon != null)
+    .map(r => [r.lon, r.lat]);
+  const features = [
+    {
+      type: 'Feature',
+      properties: {
+        kind: 'track',
+        storm_id: storm.id,
+        name: storm.name,
+        year: storm.year,
+        peak_wind_kt: storm.peak_wind_kt,
+        min_pres_mb: storm.min_pres_mb,
+      },
+      geometry: { type: 'LineString', coordinates: trackCoords },
+    },
+    ...storm.track
+      .filter(r => r.lat != null && r.lon != null)
+      .map(r => ({
+        type: 'Feature',
+        properties: {
+          kind: 'obs',
+          time: r.t,
+          wind_kt: r.wind,
+          pres_mb: r.pres,
+          status: r.status,
+          category: windToCategory(r.wind),
+        },
+        geometry: { type: 'Point', coordinates: [r.lon, r.lat] },
+      })),
+    ...(storm.us_landfalls || []).map(lf => ({
+      type: 'Feature',
+      properties: {
+        kind: 'landfall',
+        time: lf.t,
+        state: lf.state,
+        category: lf.category,
+        wind_kt: lf.wind,
+        pres_mb: lf.pres,
+        inferred: !!lf.inferred,
+      },
+      geometry: { type: 'Point', coordinates: [lf.lon, lf.lat] },
+    })),
+  ];
+  return JSON.stringify({
+    type: 'FeatureCollection',
+    features,
+    metadata: { citation: { apa: citation.apa, bibtex: citation.bibtex, url: citation.url } },
+  }, null, 2);
+}
+
+function exportKML(storm, citation = buildCitation()) {
+  const xml = (s) => String(s ?? '').replace(/[<>&"']/g, c => ({
+    '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;',
+  })[c]);
+  const trackLine = storm.track
+    .filter(r => r.lat != null && r.lon != null)
+    .map(r => `${r.lon},${r.lat},0`).join(' ');
+  const landfallPoints = (storm.us_landfalls || []).map(lf => `
+    <Placemark>
+      <name>Landfall: ${xml(lf.state)} (Cat ${lf.category})</name>
+      <description><![CDATA[
+        ${xml(lf.t)} UTC<br/>
+        Wind: ${lf.wind ?? MISSING_METRIC} kt · Pressure: ${lf.pres ?? MISSING_METRIC} mb
+      ]]></description>
+      <styleUrl>#landfallStyle</styleUrl>
+      <Point><coordinates>${lf.lon},${lf.lat},0</coordinates></Point>
+    </Placemark>`).join('');
+  const heading = (storm.name && storm.name !== 'UNNAMED' ? storm.name : 'Unnamed') + ' ' + storm.year;
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+<Document>
+  <name>${xml(heading)} — track</name>
+  <description>HurricaneMap export. Source: NOAA HURDAT2.
+APA citation: ${xml(citation.apa)}
+BibTeX citation: ${xml(citation.bibtex)}</description>
+  <Style id="trackStyle">
+    <LineStyle><color>ff58c4f3</color><width>3</width></LineStyle>
+  </Style>
+  <Style id="landfallStyle">
+    <IconStyle>
+      <color>ffa881f3</color>
+      <Icon><href>http://maps.google.com/mapfiles/kml/shapes/donut.png</href></Icon>
+    </IconStyle>
+  </Style>
+  <Placemark>
+    <name>${xml(heading)} track</name>
+    <styleUrl>#trackStyle</styleUrl>
+    <LineString>
+      <tessellate>1</tessellate>
+      <coordinates>${trackLine}</coordinates>
+    </LineString>
+  </Placemark>${landfallPoints}
+</Document>
+</kml>
+`;
+}
+
+
+/** Trigger a browser download of a string as a file. */
+export function downloadBlob({ filename, mime, body }) {
+  const blob = new Blob([body], { type: mime + ';charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 250);
+}
+
+/** Find the steepest 24-hour pressure-fall window in a track.
+ *  Returns the window with the largest mb drop ≥ 20 mb, or null if no
+ *  qualifying window exists. Both endpoints must have observed (non-null)
+ *  pressure values — we don't interpolate. The 20 mb / 24h threshold is
+ *  the operational shorthand for "explosive deepening" (Wilma 2005 dropped
+ *  95 mb in 24h; Patricia 2015 dropped 100 mb). */
+export function findPressureFall(track) {
+  if (!Array.isArray(track) || track.length < 2) return null;
+  const PRESSURE_FALL_THRESHOLD_MB = 20;
+  let best = null;
+  for (let i = 0; i < track.length; i++) {
+    if (track[i].pres == null) continue;
+    const t0 = new Date(track[i].t).getTime();
+    const p0 = track[i].pres;
+    for (let j = i + 1; j < track.length; j++) {
+      if (track[j].pres == null) continue;
+      const t1 = new Date(track[j].t).getTime();
+      const dh = (t1 - t0) / 3600000;
+      if (dh > RI_WINDOW_HOURS + 0.5) break;
+      if (dh < RI_WINDOW_HOURS - 0.5) continue;
+      const drop = p0 - track[j].pres;
+      if (drop >= PRESSURE_FALL_THRESHOLD_MB) {
+        if (!best || drop > best.drop_mb) {
+          best = {
+            from_idx: i, to_idx: j,
+            from_t: track[i].t, to_t: track[j].t,
+            from_pres: p0, to_pres: track[j].pres,
+            drop_mb: drop, hours: dh,
+            rate_mb_per_h: drop / dh,
+          };
+        }
+      }
+    }
+  }
+  return best;
+}
+
+/** Compute translation-speed (forward speed) statistics from a track.
+ *  Returns {min, mean, max, stalled_hours, peak_kmh, peak_t} where speeds
+ *  are in km/h between consecutive valid lat/lon obs at synoptic 6-hour
+ *  spacing. "stalled_hours" = total time the storm moved <10 km/h, the
+ *  conventional flood-disaster threshold (Harvey 2017, Dorian 2019). */
+export function computeTranslationStats(track) {
+  if (!Array.isArray(track) || track.length < 2) return null;
+  const speeds = [];
+  let stalledHours = 0;
+  let peak = { kmh: 0, t: null };
+  for (let i = 1; i < track.length; i++) {
+    const a = track[i - 1];
+    const b = track[i];
+    if (a.lat == null || a.lon == null || b.lat == null || b.lon == null) continue;
+    const dh = (new Date(b.t).getTime() - new Date(a.t).getTime()) / 3600000;
+    if (dh <= 0 || dh > 12.5) continue; // skip gaps > ~12h
+    const km = haversineKm(a.lat, a.lon, b.lat, b.lon);
+    const kmh = km / dh;
+    speeds.push({ kmh, hours: dh, t: b.t });
+    if (kmh < 10) stalledHours += dh;
+    if (kmh > peak.kmh) peak = { kmh, t: b.t };
+  }
+  if (speeds.length === 0) return null;
+  const sum = speeds.reduce((acc, s) => acc + s.kmh * s.hours, 0);
+  const totalH = speeds.reduce((acc, s) => acc + s.hours, 0);
+  return {
+    min_kmh: Math.min(...speeds.map(s => s.kmh)),
+    mean_kmh: sum / totalH,
+    max_kmh: peak.kmh,
+    peak_t: peak.t,
+    stalled_hours: stalledHours,
+    sample_count: speeds.length,
+  };
+}
+
+/** km/h → mph helper for display. */
+export function kmhToMph(kmh) {
+  return kmh * KM_TO_MI;
+}
+
+/** Days-at-intensity histogram.
+ *  Returns hours spent at each Saffir-Simpson tier across the storm's life.
+ *  Keys: td (depression, <34kt), ts (34-63), c1 (64-82), c2 (83-95),
+ *        c3 (96-112), c4 (113-136), c5 (137+). Hours are floats. */
+export function daysAtIntensity(track) {
+  const buckets = { td: 0, ts: 0, c1: 0, c2: 0, c3: 0, c4: 0, c5: 0 };
+  if (!Array.isArray(track) || track.length < 2) return buckets;
+  function tier(w) {
+    if (w == null) return null;
+    if (w < 34) return 'td';
+    if (w < 64) return 'ts';
+    if (w < 83) return 'c1';
+    if (w < 96) return 'c2';
+    if (w < 113) return 'c3';
+    if (w < 137) return 'c4';
+    return 'c5';
+  }
+  for (let i = 0; i < track.length - 1; i++) {
+    const a = track[i], b = track[i + 1];
+    const ta = tier(a.wind);
+    if (ta == null) continue;
+    const dh = (new Date(b.t).getTime() - new Date(a.t).getTime()) / 3.6e6;
+    if (!Number.isFinite(dh) || dh <= 0 || dh > 24) continue; // guard interpolated L
+    buckets[ta] += dh;
+  }
+  return buckets;
+}
+
+/** Compute an 8-dimensional vector for a storm for similarity scoring.
+ *  Dimensions: [peak_wind, landfall_count, track_length_km, forward_speed_kmh, RI_delta_kt, ACE, decay_rate, genesis_month]
+ *  All normalized to [0, 1] range using historical min/max from the dataset.
+ *  Used as a fallback when generated data lacks a precomputed vector. */
+export function getStormVector(storm, stats = null) {
+  const s = stats || DEFAULT_STORM_VECTOR_STATS;
+  const track = Array.isArray(storm?.track) ? storm.track : [];
+
+  const peak_wind = storm?.peak_wind_kt || 50;
+  const landfall_count = (storm?.us_landfalls || []).length;
+  const track_km = track
+    .filter(r => r.lat != null && r.lon != null)
+    .reduce((acc, r, i, arr) => {
+      if (i === 0) return 0;
+      return acc + haversineKm(arr[i - 1].lat, arr[i - 1].lon, r.lat, r.lon);
+    }, 0);
+  
+  const trans = computeTranslationStats(track);
+  const forward_speed = trans ? trans.mean_kmh : 15;
+  
+  const ri = findRapidIntensification(track);
+  const ri_delta = ri ? ri.delta_kt : 0;
+  
+  const ace_data = computeACE(track);
+  const ace = ace_data.value || 0;
+  
+  let decay_rate = 0;
+  const peakWindIdx = getPeakWindIndex(storm, track);
+  if (peakWindIdx != null && track[peakWindIdx]) {
+    const peak_t = new Date(track[peakWindIdx].t).getTime();
+    let final_wind = peak_wind;
+    let final_t = peak_t;
+    for (let i = peakWindIdx + 1; i < track.length; i++) {
+      if (track[i].wind != null) {
+        final_wind = track[i].wind;
+        final_t = new Date(track[i].t).getTime();
+      }
+    }
+    const days = (final_t - peak_t) / (24 * 3.6e6);
+    decay_rate = (peak_wind - final_wind) / (days + 1);
+  }
+  
+  const genesis_month = getGenesisMonth(storm, track);
+
+  const normalize = (val, min, max) => max === min ? 0 : Math.max(0, Math.min(1, (val - min) / (max - min)));
+  
+  return [
+    normalize(peak_wind, s.wind_min, s.wind_max),
+    normalize(landfall_count, s.landfalls_min, s.landfalls_max),
+    normalize(track_km, s.track_km_min, s.track_km_max),
+    normalize(forward_speed, s.speed_min, s.speed_max),
+    normalize(ri_delta, s.ri_min, s.ri_max),
+    normalize(ace, s.ace_min, s.ace_max),
+    normalize(decay_rate, s.decay_min, s.decay_max),
+    (genesis_month - 1) / 11,
+  ];
+}
+
+function getPeakWindIndex(storm, track) {
+  if (Number.isInteger(storm?.peak_wind_idx) && track[storm.peak_wind_idx]) return storm.peak_wind_idx;
+  if (!Array.isArray(track) || track.length === 0) return null;
+  let bestIdx = null;
+  let bestWind = -Infinity;
+  for (let i = 0; i < track.length; i++) {
+    const wind = track[i]?.wind;
+    if (wind == null || !Number.isFinite(wind)) continue;
+    if (wind > bestWind) {
+      bestWind = wind;
+      bestIdx = i;
+    }
+  }
+  return bestIdx;
+}
+
+function getGenesisMonth(storm, track) {
+  const sourceTime = storm?.genesis_t || track.find(r => r?.t)?.t;
+  if (!sourceTime) return 8;
+  const month = new Date(sourceTime).getUTCMonth() + 1;
+  return Number.isInteger(month) && month >= 1 && month <= 12 ? month : 8;
+}
+
+function isValidStormVector(vector) {
+  return Array.isArray(vector) &&
+    vector.length === STORM_SIMILARITY_VECTOR_LENGTH &&
+    vector.every(value => Number.isFinite(value));
+}
+
+/** Return the generated normalized vector when available, else compute it. */
+export function getSimilarityVector(storm, stats = null) {
+  return isValidStormVector(storm?.similarity_vector)
+    ? storm.similarity_vector
+    : getStormVector(storm, stats);
+}
+
+/** Compute cosine similarity between two 8-dimensional vectors. */
+function cosineSimilarity(v1, v2) {
+  if (!v1 || !v2 || v1.length !== v2.length) return 0;
+  let dot = 0, mag1 = 0, mag2 = 0;
+  for (let i = 0; i < v1.length; i++) {
+    dot += v1[i] * v2[i];
+    mag1 += v1[i] * v1[i];
+    mag2 += v2[i] * v2[i];
+  }
+  const denom = Math.sqrt(mag1) * Math.sqrt(mag2);
+  return denom === 0 ? 0 : dot / denom;
+}
+
+/** Find the N most similar storms to a reference storm.
+ *  Returns top-N array of {storm_id, name, year, similarity_score, peak_wind_kt, landfalls}. */
+export function findSimilarStorms(referenceStorm, allStorms, topN = 5) {
+  if (!referenceStorm || !Array.isArray(allStorms) || allStorms.length === 0) return [];
+  
+  const refVector = getSimilarityVector(referenceStorm);
+  const scores = allStorms
+    .filter(s => s.id !== referenceStorm.id)
+    .map(storm => ({
+      storm_id: storm.id,
+      name: storm.name,
+      year: storm.year,
+      peak_wind_kt: storm.peak_wind_kt,
+      landfalls: (storm.us_landfalls || []).length,
+      similarity_score: cosineSimilarity(refVector, getSimilarityVector(storm)),
+    }))
+    .sort((a, b) => b.similarity_score - a.similarity_score)
+    .slice(0, topN);
+  
+  return scores;
+}
+
+/** Compute climate trend data for stats panel.
+ *  Returns yearly aggregates (ACE, landfall count, peak wind, forward speed)
+ *  and 10-year rolling averages for visualization.
+ *  Data range: 1851–present. */
+export function computeClimateTrends(allStorms) {
+  if (!Array.isArray(allStorms) || allStorms.length === 0) return null;
+
+  // Group storms by year
+  const byYear = {};
+  for (const storm of allStorms) {
+    if (!storm.year) continue;
+    if (!byYear[storm.year]) {
+      byYear[storm.year] = {
+        year: storm.year,
+        storms: [],
+        us_landfalls: [],
+      };
+    }
+    byYear[storm.year].storms.push(storm);
+    if (Array.isArray(storm.us_landfalls)) {
+      byYear[storm.year].us_landfalls.push(...storm.us_landfalls);
+    }
+  }
+
+  // Densify the year axis: zero-storm seasons must appear as zeros, or the
+  // "10-year" rolling windows below span 10 data points rather than 10
+  // calendar years, biasing the averages and distorting regression spacing.
+  const yearsPresent = Object.keys(byYear).map(Number);
+  const minYear = Math.min(...yearsPresent);
+  const maxYear = Math.max(...yearsPresent);
+  for (let y = minYear; y <= maxYear; y++) {
+    if (!byYear[y]) byYear[y] = { year: y, storms: [], us_landfalls: [] };
+  }
+
+  // Compute yearly metrics
+  const yearly = Object.values(byYear)
+    .sort((a, b) => a.year - b.year)
+    .map(year => {
+      let totalACE = 0;
+      let totalWind = 0;
+      let totalSpeed = 0;
+      let speedCount = 0;
+
+      for (const storm of year.storms) {
+        const ace = computeACE(storm.track);
+        totalACE += ace.value;
+        totalWind += storm.peak_wind_kt || 0;
+        const trans = computeTranslationStats(storm.track);
+        if (trans) {
+          totalSpeed += trans.mean_kmh;
+          speedCount++;
+        }
+      }
+
+      return {
+        year: year.year,
+        named_storms: year.storms.length,
+        landfalls: year.us_landfalls.length,
+        major_landfalls: (year.us_landfalls || []).filter(lf => lf.category >= 3).length,
+        avg_peak_wind: year.storms.length > 0 ? totalWind / year.storms.length : 0,
+        avg_forward_speed: speedCount > 0 ? totalSpeed / speedCount : 0,
+        total_ace: totalACE,
+      };
+    });
+
+  // Compute 10-year rolling averages
+  const rolling = yearly.map((year, idx) => {
+    const start = Math.max(0, idx - 4); // center the window (5 years before + current + 4 years after = 10 years)
+    const end = Math.min(yearly.length, idx + 6);
+    const window = yearly.slice(start, end);
+
+    if (window.length === 0) {
+      return { year: year.year, rolling_avg_landfalls: 0, rolling_avg_ace: 0, rolling_avg_speed: 0 };
+    }
+
+    const avg_landfalls = window.reduce((sum, y) => sum + y.landfalls, 0) / window.length;
+    const aceTerms = window.map(y => y.total_ace);
+    const aceTotal = Math.sumPrecise ? Math.sumPrecise(aceTerms) : aceTerms.reduce((sum, term) => sum + term, 0);
+    const avg_ace = aceTotal / window.length;
+    // Forward speed only exists for seasons with storms — zero-filled seasons
+    // are absence of data, not 0 km/h, so exclude them from this average.
+    const speedYears = window.filter(y => y.named_storms > 0 && y.avg_forward_speed > 0);
+    const avg_speed = speedYears.length
+      ? speedYears.reduce((sum, y) => sum + y.avg_forward_speed, 0) / speedYears.length
+      : 0;
+
+    return {
+      year: year.year,
+      rolling_avg_landfalls: avg_landfalls,
+      rolling_avg_ace: avg_ace,
+      rolling_avg_speed: avg_speed,
+    };
+  });
+
+  // Compute overall trends (linear regression slope for the 10-year rolling averages)
+  const trends = {
+    landfalls_slope: computeTrendSlope(rolling.map(y => ({ x: y.year, y: y.rolling_avg_landfalls }))),
+    ace_slope: computeTrendSlope(rolling.map(y => ({ x: y.year, y: y.rolling_avg_ace }))),
+    speed_slope: computeTrendSlope(rolling.map(y => ({ x: y.year, y: y.rolling_avg_speed }))),
+  };
+
+  return {
+    yearly,
+    rolling,
+    trends,
+  };
+}
+
+/** Compute linear regression slope for trend analysis. */
+function computeTrendSlope(points) {
+  if (!Array.isArray(points) || points.length < 2) return 0;
+  const n = points.length;
+  const sumX = points.reduce((sum, p) => sum + p.x, 0);
+  const sumY = points.reduce((sum, p) => sum + p.y, 0);
+  const sumXY = points.reduce((sum, p) => sum + p.x * p.y, 0);
+  const sumX2 = points.reduce((sum, p) => sum + p.x * p.x, 0);
+  
+  const denom = n * sumX2 - sumX * sumX;
+  if (denom === 0) return 0;
+  
+  return (n * sumXY - sumX * sumY) / denom;
+}
+
+/** Compute first-24h wind gain (proxy for rate of development).
+ *  Returns the wind increase within the first 24 hours of track,
+ *  or 0 if track is too short. */
+function computeFirst24hWindGain(track) {
+  if (!Array.isArray(track) || track.length < 2) return 0;
+  if (track[0].wind == null) return 0;
+  
+  const t0 = new Date(track[0].t).getTime();
+  let maxWind = track[0].wind;
+  
+  for (let i = 1; i < track.length; i++) {
+    if (track[i].wind == null) continue;
+    const ti = new Date(track[i].t).getTime();
+    const dh = (ti - t0) / 3600000;
+    
+    if (dh > 24.5) break;
+    maxWind = Math.max(maxWind, track[i].wind);
+  }
+  
+  return maxWind - track[0].wind;
+}
+
+/** Compute RI risk score for a storm based on historical precedent.
+ *  Compares the target storm to similar storms in the dataset and
+ *  returns the probability that an RI event will occur.
+ *  
+ *  Similarity criteria:
+ *  - Peak wind within ±15 kt
+ *  - Genesis month within ±1 month (cyclical)
+ *  - First 24h wind gain within ±10 kt
+ *  
+ *  Returns { probability: 0-1, category: 'high'|'medium'|'low', similar_count: N, ri_count: M }
+ */
+export function computeRIRiskScore(targetStorm, allStorms) {
+  if (!targetStorm || !Array.isArray(allStorms) || allStorms.length === 0) {
+    return { probability: 0.5, category: 'medium', similar_count: 0, ri_count: 0 };
+  }
+  
+  // Get target storm properties
+  const targetPeakWind = targetStorm.peak_wind_kt || 0;
+  const targetGenesisMonth = new Date(targetStorm.track[0]?.t || '').getUTCMonth();
+  const targetFirst24h = computeFirst24hWindGain(targetStorm.track);
+  
+  // Define similarity bands
+  const WIND_BAND = 15;
+  const MONTH_BAND = 1;
+  const GAIN_BAND = 10;
+  
+  // Circular distance for months (0-11)
+  const monthDist = (m1, m2) => {
+    const d = Math.abs(m1 - m2);
+    return Math.min(d, 12 - d);
+  };
+  
+  // Find similar storms
+  let similarStorms = [];
+  for (const storm of allStorms) {
+    if (storm.id === targetStorm.id) continue;
+    if (!storm.peak_wind_kt || !storm.track || storm.track.length < 2) continue;
+    
+    const peakWind = storm.peak_wind_kt;
+    const genesisMonth = new Date(storm.track[0]?.t || '').getUTCMonth();
+    const first24h = computeFirst24hWindGain(storm.track);
+    
+    // Check similarity criteria (all must match)
+    const windMatch = Math.abs(peakWind - targetPeakWind) <= WIND_BAND;
+    const monthMatch = monthDist(genesisMonth, targetGenesisMonth) <= MONTH_BAND;
+    const gainMatch = Math.abs(first24h - targetFirst24h) <= GAIN_BAND;
+    
+    if (windMatch && monthMatch && gainMatch) {
+      const hadRI = findRapidIntensification(storm.track) !== null;
+      similarStorms.push({ storm_id: storm.id, had_ri: hadRI });
+    }
+  }
+  
+  // Compute probability
+  if (similarStorms.length === 0) {
+    // No similar storms found; use base rate from entire dataset
+    let baseRI = 0;
+    for (const storm of allStorms) {
+      if (storm.track && storm.track.length >= 2) {
+        if (findRapidIntensification(storm.track)) baseRI++;
+      }
+    }
+    const baseProbability = allStorms.length > 0 ? baseRI / allStorms.length : 0.3;
+    return { probability: baseProbability, category: 'medium', similar_count: 0, ri_count: 0 };
+  }
+  
+  const riCount = similarStorms.filter(s => s.had_ri).length;
+  const probability = riCount / similarStorms.length;
+  
+  // Map to category
+  let category = 'low';
+  if (probability > 0.66) category = 'high';
+  else if (probability > 0.33) category = 'medium';
+  
+  return {
+    probability: Math.round(probability * 100) / 100,
+    category,
+    similar_count: similarStorms.length,
+    ri_count: riCount,
+  };
+}
+
+/** Generate a natural-language "biography" of a storm.
+ *  Synthesizes key metrics and events into a 3-4 sentence narrative.
+ *  Returns a string suitable for display in the storm panel.
+ */
+export function generateStormBiography(storm, impacts) {
+  const nameStr = storm.name && storm.name !== 'UNNAMED' ? storm.name : 'an unnamed storm';
+  const yearStr = storm.year || '?';
+  
+  // Determine category descriptor
+  const peakCat = windToCategory(storm.peak_wind_kt);
+  let catDescriptor = 'tropical depression';
+  if (peakCat >= 1 && peakCat <= 5) {
+    catDescriptor = ['Category 1', 'Category 2', 'Category 3', 'Category 4', 'Category 5'][peakCat - 1] + ' hurricane';
+  } else if (peakCat === -1) {
+    catDescriptor = 'tropical storm';
+  }
+  
+  // Genesis info: month + region estimate
+  const genesisDate = new Date(storm.track[0]?.t || '');
+  const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const genesisMonth = Number.isNaN(genesisDate.getTime()) ? '?' : (months[genesisDate.getUTCMonth()] || '?');
+
+  const firstLat = storm.track[0]?.lat || 0;
+  const firstLon = storm.track[0]?.lon || 0;
+  const stormBasin = String(storm.id || '').slice(0, 2).toUpperCase() || String(storm.basin || '').toUpperCase();
+  let region = 'the Atlantic basin';
+  if (stormBasin === 'CP') region = 'the central Pacific';
+  else if (stormBasin === 'EP') region = 'the eastern Pacific';
+  else if (firstLon < -80 && firstLat < 31) region = 'the Gulf of Mexico';
+  else if (firstLon < -70 && firstLat < 25) region = 'the Caribbean';
+  else if (firstLon < -70) region = 'the western Atlantic';
+  else if (firstLon < -30) region = 'the central Atlantic';
+  else region = 'off the African coast';
+  
+  // Landfall info
+  const landfalls = Array.isArray(storm.us_landfalls) ? storm.us_landfalls : [];
+  const landfallStates = [...new Set(landfalls.map(lf => lf.state).filter(Boolean))];
+  const landfallStr = landfalls.length === 0 ? 'did not make landfall' :
+    landfalls.length === 1 ? `made landfall in ${landfallStates[0] || 'the United States'}` :
+    `made ${landfalls.length} landfalls in ${landfallStates.join(', ') || 'the United States'}`;
+  
+  // Impact info
+  const impactSummary = formatBiographyImpacts(impacts);
+  const impactStr = impactSummary ? ` and ${impactSummary}` : '';
+  
+  // Distinctive features
+  const ri = findRapidIntensification(storm.track);
+  const pf = findPressureFall(storm.track);
+  const features = [];
+  if (ri) features.push(`underwent rapid intensification (+${ri.delta_kt} kt in 24h)`);
+  if (pf) features.push(`experienced explosive deepening (−${pf.drop_mb} mb pressure drop)`);
+  if (storm.us_landfall_count > 2) features.push('impacted multiple states');
+  
+  const featureStr = features.length > 0 ? ` The storm ${features.join(', ')}.` : '';
+  
+  // Assemble biography
+  return `${nameStr.toUpperCase()} (${yearStr}) was a ${catDescriptor} that formed in ${genesisMonth} in ${region} and ${landfallStr}, with peak intensity of ${storm.peak_wind_kt} kt${impactStr}.${featureStr}`;
+}
+
+/** Format the optional impact clause shared by biography display and exports. */
+export function formatBiographyImpacts(impacts) {
+  const fatalities = getFatalityCount(impacts);
+  const damageUsd = getNominalDamageUsd(impacts);
+  const details = [];
+  if (Number.isFinite(fatalities) && fatalities > 0) {
+    const noun = fatalities === 1 ? 'fatality' : 'fatalities';
+    details.push(`${fatalities.toLocaleString('en-US')} ${noun}`);
+  }
+  if (Number.isFinite(damageUsd) && damageUsd > 0) {
+    details.push(`${formatDamageBrief(damageUsd)} in damage`);
+  }
+  return details.length > 0 ? `caused ${details.join(' and ')}` : '';
+}
+
+function formatDamageBrief(usd) {
+  if (usd >= 1_000_000_000) {
+    const decimals = usd >= 10_000_000_000 ? 0 : 1;
+    return `$${(usd / 1_000_000_000).toFixed(decimals)}B`;
+  }
+  return `$${(usd / 1_000_000).toFixed(1)}M`;
+}

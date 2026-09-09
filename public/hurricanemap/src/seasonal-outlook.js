@@ -1,0 +1,154 @@
+// Seasonal hurricane outlook — links to NOAA CPC outlook + historical skill context.
+//
+// The CPC outlook page (cpc.ncep.noaa.gov) does not send CORS headers, so
+// fetching it from the browser fails. Instead of fragile HTML scraping, this
+// module renders a direct link to the official outlook with historical accuracy
+// context that helps users interpret the forecast.
+
+import { escapeHtml, safeExternalUrl } from './html-utils.js';
+import { t } from './i18n.js';
+import {
+  beginOptionalFeed,
+  completeOptionalFeed,
+  failOptionalFeed,
+} from './optional-feeds.js';
+import { fetchWithTimeout, REQUEST_TIMEOUT_MS } from './network.js';
+import { getSnapshotStatus, parseSnapshotDate } from './snapshot-freshness.js';
+
+const CPC_URL = 'https://www.cpc.ncep.noaa.gov/products/outlooks/hurricane.shtml';
+
+function hasValidSnapshotWindow(snapshot) {
+  const issued = parseSnapshotDate(snapshot?.issued);
+  const validUntil = parseSnapshotDate(snapshot?.valid_until);
+  return Boolean(issued && validUntil && issued <= validUntil);
+}
+
+// Only the accuracy figures live here. The English descriptions that used to
+// sit beside them were rendered from the catalog instead, so nothing read them,
+// and one had already drifted from the string it duplicated: "7-8 named storms,
+// moderate ACE" against the catalog's "7-8 named storms and moderate ACE".
+const SKILL_DATA = {
+  'above-normal': {
+    accuracy: 72,
+  },
+  'below-normal': {
+    accuracy: 68,
+  },
+  'near-normal': {
+    accuracy: 55,
+  },
+};
+
+function getSeasonalSkillMetrics() {
+  return SKILL_DATA;
+}
+
+export async function fetchSeasonalOutlook() {
+  const base = {
+    category: 'see-official',
+    confidence: null,
+    source: 'NOAA Climate Prediction Center',
+    url: CPC_URL,
+  };
+  // Static editorial snapshot of the current season's published outlooks
+  // (data/outlook.json). Refresh it when NOAA/CSU issue updates; a stale or
+  // missing file degrades to the link-only banner.
+  const request = beginOptionalFeed('seasonal', { cacheOrigin: 'bundled' });
+  try {
+    const response = await fetchWithTimeout('data/outlook.json', {}, REQUEST_TIMEOUT_MS.data);
+    if (response.ok) {
+      const data = await response.json();
+      if (
+        data
+        && Number.isInteger(data.season)
+        && Array.isArray(data.sources)
+        && hasValidSnapshotWindow(data)
+        && data.sources.every(source => hasValidSnapshotWindow(source))
+      ) {
+        base.current = data;
+        completeOptionalFeed('seasonal', {
+          itemCount: data.sources.length,
+          cacheOrigin: 'bundled',
+          requestId: request.requestId,
+        });
+        return base;
+      }
+    }
+    failOptionalFeed('seasonal', { responseStatus: response.status, cacheOrigin: 'bundled', requestId: request.requestId });
+  } catch (error) {
+    failOptionalFeed('seasonal', { error, cacheOrigin: 'bundled', requestId: request.requestId });
+  }
+  return base;
+}
+
+function renderCurrentSeasonRows(current, now = new Date()) {
+  const editorial = value => {
+    const keys = {
+      Atlantic: 'seasonal.basinAtlantic',
+      'El Niño (strong)': 'seasonal.ensoStrong',
+      'Below-normal season expected': 'seasonal.headlineBelowNormal',
+      'CSU (July update)': 'seasonal.csuJuly',
+      '55% chance below-normal': 'seasonal.probabilityBelow',
+    };
+    return keys[value] ? t(keys[value]) : value;
+  };
+  const status = getSnapshotStatus(current, now);
+  const statusNotice = status.expired
+    ? `<div class="sob-status sob-status--warning" role="status">${escapeHtml(t('seasonal.expired'))}</div>`
+    : status.stale
+      ? `<div class="sob-status sob-status--warning" role="status">${escapeHtml(t('seasonal.stale', status.daysOld))}</div>`
+      : '';
+  const rows = current.sources.map(source => {
+    const agency = escapeHtml(editorial(source.agency));
+    const sourceUrl = safeExternalUrl(source.url);
+    const agencyHtml = sourceUrl
+      ? `<a class="sob-agency" href="${sourceUrl}" target="_blank" rel="noopener">${agency}</a>`
+      : `<span class="sob-agency">${agency}</span>`;
+    return `
+    <div class="sob-row">
+      ${agencyHtml}
+      <span class="sob-numbers">${escapeHtml(t('seasonal.counts', source.named, source.hurricanes, source.majors))}</span>
+      <span class="sob-issued">${source.probability ? `${escapeHtml(editorial(source.probability))} · ` : ''}${escapeHtml(t('seasonal.issued', source.issued))} · ${escapeHtml(t('seasonal.validUntil', source.valid_until))}</span>
+    </div>`;
+  }).join('');
+  return `
+    <div class="sob-current">
+      <div class="sob-headline">
+        <strong>${escapeHtml(current.season)} ${escapeHtml(editorial(current.basin))}: ${escapeHtml(editorial(current.headline))}</strong>
+        <span class="sob-enso">${escapeHtml(editorial(current.enso))}</span>
+      </div>
+      ${statusNotice}
+      ${rows}
+    </div>`;
+}
+
+export function renderOutlookBanner(outlook, { now = new Date() } = {}) {
+  if (!outlook) return '';
+
+  const skill = getSeasonalSkillMetrics();
+  const avgAccuracy = Math.round(
+    Object.values(skill).reduce((sum, s) => sum + s.accuracy, 0) / Object.keys(skill).length,
+  );
+
+  return `
+    <div class="seasonal-outlook-banner">
+      <div class="sob-header">
+        <span class="sob-icon">📊</span>
+        <span class="sob-label">${escapeHtml(t('seasonal.label'))}</span>
+        <span class="sob-source">NOAA CPC</span>
+      </div>
+      <div class="optional-feed-status-host" data-feed-status="seasonal"></div>
+      ${outlook.current ? renderCurrentSeasonRows(outlook.current, now) : ''}
+      <div class="sob-meta">
+        <a href="${CPC_URL}" target="_blank" rel="noopener">${escapeHtml(t('seasonal.currentLink'))}</a>
+      </div>
+      <details class="sob-details">
+        <summary>${escapeHtml(t('seasonal.history'))}</summary>
+        <p>${escapeHtml(t('seasonal.accuracySummary', avgAccuracy))}</p>
+        <p class="sob-definition"><strong>${escapeHtml(t('seasonal.aboveNormal'))}:</strong> ${escapeHtml(t('seasonal.definition.above'))} (${escapeHtml(t('seasonal.accurate', skill['above-normal'].accuracy))})</p>
+        <p class="sob-definition"><strong>${escapeHtml(t('seasonal.nearNormal'))}:</strong> ${escapeHtml(t('seasonal.definition.near'))} (${escapeHtml(t('seasonal.accurate', skill['near-normal'].accuracy))})</p>
+        <p class="sob-definition"><strong>${escapeHtml(t('seasonal.belowNormal'))}:</strong> ${escapeHtml(t('seasonal.definition.below'))} (${escapeHtml(t('seasonal.accurate', skill['below-normal'].accuracy))})</p>
+      </details>
+    </div>
+  `;
+}

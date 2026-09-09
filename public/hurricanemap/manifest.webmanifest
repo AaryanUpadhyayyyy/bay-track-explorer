@@ -1,0 +1,28 @@
+{
+  "name": "HurricaneMap: U.S. Hurricane Landfalls 1851-Present",
+  "short_name": "HurricaneMap",
+  "description": "Interactive map of every U.S. hurricane landfall on record, drawn from NOAA's HURDAT2 database.",
+  "id": "./",
+  "scope": "./",
+  "lang": "en-US",
+  "dir": "ltr",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#11111b",
+  "theme_color": "#11111b",
+  "categories": ["weather", "education"],
+  "icons": [
+    { "src": "branding/logo-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "branding/logo-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "branding/logo-192-maskable.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "branding/logo-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "screenshots": [
+    { "src": "example.png", "sizes": "1440x960", "type": "image/png", "form_factor": "wide", "label": "Operational hurricane atlas with historical landfalls and timeline" },
+    { "src": "branding/screenshot-narrow.png", "sizes": "860x1864", "type": "image/png", "form_factor": "narrow", "label": "Compact hurricane atlas with map-first navigation and timeline" }
+  ],
+  "shortcuts": [
+    { "name": "Statistics", "url": "./#stats", "description": "View hurricane statistics and trends" },
+    { "name": "Compare Storms", "url": "./#compare", "description": "Compare up to 4 storms side-by-side" }
+  ]
+}
