@@ -1102,6 +1102,8 @@ export default {
   'panel.riskLow': 'Low',
   'panel.catAtLandfall': '{0} at landfall',
   'panel.peakIntensityLabel': 'Peak intensity:',
+  'panel.basinBayOfBengal': 'Bay of Bengal',
+  'panel.basinArabianSea': 'Arabian Sea',
   'panel.basinAtlantic': 'Atlantic basin',
   'panel.basinEastPacific': 'Eastern Pacific basin',
   'panel.avgForwardSpeed': 'Avg forward speed',

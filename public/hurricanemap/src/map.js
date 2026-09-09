@@ -38,7 +38,7 @@ function addBasemap(targetMap) {
 
 export function initMap() {
   map = L.map('map', {
-    center: [29.5, -84.0],
+    center: [15.5, 87.0],
     zoom: 5,
     minZoom: 3,
     maxZoom: 11,

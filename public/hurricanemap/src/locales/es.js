@@ -1099,6 +1099,8 @@ export default {
   'panel.riskLow': 'Bajo',
   'panel.catAtLandfall': '{0} al tocar tierra',
   'panel.peakIntensityLabel': 'Intensidad máxima:',
+  'panel.basinBayOfBengal': 'Bahía de Bengala',
+  'panel.basinArabianSea': 'Mar Arábigo',
   'panel.basinAtlantic': 'Cuenca del Atlántico',
   'panel.basinEastPacific': 'Cuenca del Pacífico oriental',
   'panel.avgForwardSpeed': 'Velocidad media de avance',

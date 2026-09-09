@@ -270,7 +270,7 @@ function render(storm, landfall, allStorms, advisoryReplay = null, renderSeq = s
       <div class="meta-row">
         <span class="cat-pill ${categoryClass(lfCat)}">${t('panel.catAtLandfall', lfLabel)}</span>
         <span>${t('panel.peakIntensityLabel')} <strong>${peakLabel} ${storm.peak_wind_kt} kt</strong></span>
-        <span>${storm.basin === 'EP' ? t('panel.basinEastPacific') : t('panel.basinAtlantic')}</span>
+        <span>${storm.basin === 'AS' ? t('panel.basinArabianSea') : t('panel.basinBayOfBengal')}</span>
         <span>${escapeHtml(storm.id)}</span>
       </div>
     </div>
@@ -496,29 +496,22 @@ function render(storm, landfall, allStorms, advisoryReplay = null, renderSeq = s
   });
 }
 
-// Map a U.S. state name to a representative city in COASTAL_CITIES so the
-// closest-pass selector defaults to a relevant city for the storm at hand.
+// Map an Indian coastal state/UT to a representative city in COASTAL_CITIES so
+// the closest-pass selector defaults to a relevant city for the storm at hand.
 const STATE_TO_CITY = {
-  'Florida': 'Miami, FL',
-  'Texas': 'Galveston, TX',
-  'Louisiana': 'New Orleans, LA',
-  'Mississippi': 'Mobile, AL',
-  'Alabama': 'Mobile, AL',
-  'Georgia': 'Savannah, GA',
-  'South Carolina': 'Charleston, SC',
-  'North Carolina': 'Cape Hatteras, NC',
-  'Virginia': 'Norfolk, VA',
-  'Maryland': 'Norfolk, VA',
-  'Delaware': 'Norfolk, VA',
-  'New Jersey': 'New York, NY',
-  'New York': 'New York, NY',
-  'Connecticut': 'New York, NY',
-  'Rhode Island': 'Boston, MA',
-  'Massachusetts': 'Boston, MA',
-  'New Hampshire': 'Boston, MA',
-  'Maine': 'Boston, MA',
-  'Hawaii': 'Honolulu, HI',
-  'Puerto Rico': 'San Juan, PR',
+  'West Bengal': 'Kolkata, WB',
+  'Odisha': 'Puri, OD',
+  'Andhra Pradesh': 'Visakhapatnam, AP',
+  'Tamil Nadu': 'Chennai, TN',
+  'Puducherry': 'Puducherry, PY',
+  'Andaman and Nicobar Islands': 'Port Blair, AN',
+  'Kerala': 'Kochi, KL',
+  'Karnataka': 'Mangaluru, KA',
+  'Goa': 'Panaji, GA',
+  'Maharashtra': 'Mumbai, MH',
+  'Gujarat': 'Porbandar, GJ',
+  'Dadra and Nagar Haveli and Daman and Diu': 'Surat, GJ',
+  'Lakshadweep': 'Kochi, KL',
 };
 
 function pickDefaultCity(storm) {
@@ -528,9 +521,9 @@ function pickDefaultCity(storm) {
     const c = COASTAL_CITIES.find(x => x.name === cityName);
     if (c) return c;
   }
-  return storm.basin === 'EP'
-    ? COASTAL_CITIES.find(x => x.name === 'Honolulu, HI') || COASTAL_CITIES[0]
-    : COASTAL_CITIES[0];
+  return storm.basin === 'AS'
+    ? COASTAL_CITIES.find(x => x.name === 'Mumbai, MH') || COASTAL_CITIES[0]
+    : COASTAL_CITIES.find(x => x.name === 'Puri, OD') || COASTAL_CITIES[0];
 }
 
 function renderExposureStatTile(exposure) {

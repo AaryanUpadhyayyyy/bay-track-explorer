@@ -104,35 +104,30 @@ export function findRapidIntensification(track) {
 /** Hardcoded list of U.S. + nearby coastal cities for closest-pass queries.
  *  Curated for hurricane relevance (Atlantic + Gulf + Pacific NEPAC reach). */
 export const COASTAL_CITIES = [
-  // Atlantic / Gulf US
-  { name: 'Miami, FL',          lat: 25.7617,  lon:  -80.1918 },
-  { name: 'Key West, FL',       lat: 24.5551,  lon:  -81.7800 },
-  { name: 'Tampa, FL',          lat: 27.9506,  lon:  -82.4572 },
-  { name: 'Jacksonville, FL',   lat: 30.3322,  lon:  -81.6557 },
-  { name: 'Daytona Beach, FL',  lat: 29.2108,  lon:  -81.0228 },
-  { name: 'Pensacola, FL',      lat: 30.4213,  lon:  -87.2169 },
-  { name: 'Mobile, AL',         lat: 30.6954,  lon:  -88.0399 },
-  { name: 'New Orleans, LA',    lat: 29.9511,  lon:  -90.0715 },
-  { name: 'Galveston, TX',      lat: 29.3013,  lon:  -94.7977 },
-  { name: 'Houston, TX',        lat: 29.7604,  lon:  -95.3698 },
-  { name: 'Corpus Christi, TX', lat: 27.8006,  lon:  -97.3964 },
-  { name: 'Brownsville, TX',    lat: 25.9018,  lon:  -97.4975 },
-  // Atlantic Eastern Seaboard
-  { name: 'Savannah, GA',       lat: 32.0809,  lon:  -81.0912 },
-  { name: 'Charleston, SC',     lat: 32.7765,  lon:  -79.9311 },
-  { name: 'Wilmington, NC',     lat: 34.2257,  lon:  -77.9447 },
-  { name: 'Cape Hatteras, NC',  lat: 35.2509,  lon:  -75.5288 },
-  { name: 'Norfolk, VA',        lat: 36.8508,  lon:  -76.2859 },
-  { name: 'Washington, DC',     lat: 38.9072,  lon:  -77.0369 },
-  { name: 'New York, NY',       lat: 40.7128,  lon:  -74.0060 },
-  { name: 'Boston, MA',         lat: 42.3601,  lon:  -71.0589 },
-  // Caribbean / outlying US
-  { name: 'San Juan, PR',       lat: 18.4655,  lon:  -66.1057 },
-  // NEPAC reach
-  { name: 'Honolulu, HI',       lat: 21.3099,  lon: -157.8581 },
-  { name: 'Hilo, HI',           lat: 19.7297,  lon: -155.0900 },
-  { name: 'San Diego, CA',      lat: 32.7157,  lon: -117.1611 },
-  { name: 'Cabo San Lucas, MX', lat: 22.8905,  lon: -109.9167 },
+  // Bay of Bengal coast (east India)
+  { name: 'Kolkata, WB',        lat: 22.5726, lon:  88.3639 },
+  { name: 'Digha, WB',          lat: 21.6270, lon:  87.5090 },
+  { name: 'Paradip, OD',        lat: 20.3167, lon:  86.6100 },
+  { name: 'Puri, OD',           lat: 19.8135, lon:  85.8312 },
+  { name: 'Gopalpur, OD',       lat: 19.2667, lon:  84.9167 },
+  { name: 'Visakhapatnam, AP',  lat: 17.6868, lon:  83.2185 },
+  { name: 'Kakinada, AP',       lat: 16.9891, lon:  82.2475 },
+  { name: 'Machilipatnam, AP',  lat: 16.1700, lon:  81.1300 },
+  { name: 'Nellore, AP',        lat: 14.4426, lon:  79.9865 },
+  { name: 'Chennai, TN',        lat: 13.0827, lon:  80.2707 },
+  { name: 'Cuddalore, TN',      lat: 11.7480, lon:  79.7714 },
+  { name: 'Nagapattinam, TN',   lat: 10.7660, lon:  79.8420 },
+  { name: 'Puducherry, PY',     lat: 11.9416, lon:  79.8083 },
+  { name: 'Port Blair, AN',     lat: 11.6234, lon:  92.7265 },
+  // Arabian Sea coast (west India)
+  { name: 'Thiruvananthapuram, KL', lat: 8.5241, lon: 76.9366 },
+  { name: 'Kochi, KL',          lat:  9.9312, lon:  76.2673 },
+  { name: 'Mangaluru, KA',      lat: 12.9141, lon:  74.8560 },
+  { name: 'Panaji, GA',         lat: 15.4909, lon:  73.8278 },
+  { name: 'Mumbai, MH',         lat: 19.0760, lon:  72.8777 },
+  { name: 'Surat, GJ',          lat: 21.1702, lon:  72.8311 },
+  { name: 'Porbandar, GJ',      lat: 21.6417, lon:  69.6293 },
+  { name: 'Bhuj, GJ',           lat: 23.2420, lon:  69.6669 },
 ];
 
 /** Great-circle distance in km between two lat/lon points (haversine). */

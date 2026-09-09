@@ -1077,6 +1077,8 @@ export default {
   'panel.riskLow': 'Ba',
   'panel.catAtLandfall': '{0} lè li rive atè',
   'panel.peakIntensityLabel': 'Entansite maksimòm:',
+  'panel.basinBayOfBengal': 'Gòlf Bengal',
+  'panel.basinArabianSea': 'Lanmè Arabik',
   'panel.basinAtlantic': 'Basen Atlantik',
   'panel.basinEastPacific': 'Basen Pasifik lès',
   'panel.avgForwardSpeed': 'Vitès mwayèn deplasman',
