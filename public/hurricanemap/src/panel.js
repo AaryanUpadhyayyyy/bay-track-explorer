@@ -1,4 +1,4 @@
-// Storm details panel + Wikipedia/YouTube quicklinks.
+// Storm details panel + IMD / MOSDAC / Wikipedia quicklinks.
 import {
   ensureStormsLoaded, ensureOptionalData, getStorm, categoryLabel, categoryClass,
   formatTime, getImpactsFor, getAllStorms, windToCategory,
@@ -26,13 +26,11 @@ import {
   formatExposurePeople,
   formatExposureTooltip,
 } from './exposure.js';
-import { tornadoSearchHint, tornadoSearchUrl } from './impact-utils.js';
 import {
-  nhcWalletUrlFor,
-  noaaTcrUrl,
-  reconArchiveUrl,
+  imdBestTrackUrl,
+  imdReportUrl,
+  mosdacSatelliteUrl,
   renderImpactsBlock,
-  sliderSatelliteUrl,
   wikipediaUrl,
   youtubeUrl,
 } from './panel-impacts.js';
