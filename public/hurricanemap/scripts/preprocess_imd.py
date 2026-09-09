@@ -113,6 +113,13 @@ def load_tracks(path: Path) -> pd.DataFrame:
     hours = frame["ISO_TIME"].dt.hour
     minutes = frame["ISO_TIME"].dt.minute
     frame = frame[((hours % 6 == 0) & (minutes == 0)) | frame["WIND"].notna()]
+    # Fill short intensity gaps inside a storm's own life (never extrapolate
+    # past its first or last reported value) so landfall points that sit
+    # between two reported observations still carry an intensity.
+    for column in ("WIND", "PRES"):
+        frame[column] = frame.groupby("SID")[column].transform(
+            lambda values: values.interpolate(limit_area="inside", limit=4)
+        )
     # Keep the basin box; IBTrACS NI includes a few strays from neighbours.
     frame = frame[frame["LAT"].between(-5, 35) & frame["LON"].between(40, 110)]
     return frame.sort_values(["SID", "ISO_TIME"])
