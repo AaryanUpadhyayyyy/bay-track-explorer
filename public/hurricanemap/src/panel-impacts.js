@@ -18,36 +18,39 @@ import {
 import { getBundledDatasetState, getBundledDatasetStatus } from './optional-feeds.js';
 import { getSetting } from './settings.js';
 
-// Wikipedia article URL — best-effort. Tries the standard article naming pattern;
-// the user's browser will redirect if Wikipedia has a different canonical title.
+// Wikipedia article URL — best-effort. Tries the standard article naming pattern
+// for the North Indian Ocean; the user's browser will redirect if Wikipedia has a
+// different canonical title.
 export function wikipediaUrl(storm) {
   if (!storm.name || storm.name === 'UNNAMED') {
-    return `https://en.wikipedia.org/wiki/Special:Search?search=${encodeURIComponent(`${storm.year} Atlantic hurricane season`)}`;
+    return `https://en.wikipedia.org/wiki/Special:Search?search=${encodeURIComponent(`${storm.year} North Indian Ocean cyclone season`)}`;
   }
   const name = formatStormName(storm.name);
-  // Most modern named storms: "Hurricane <Name> (YYYY)" or "Tropical Storm <Name> (YYYY)"
-  const peakCat = windToCategory(storm.peak_wind_kt);
-  const prefix = peakCat >= 1 ? 'Hurricane' : 'Tropical_Storm';
-  const slug = `${prefix}_${name}_(${storm.year})`;
-  // Use Wikipedia search with the article title as query — handles redirects
-  // and disambiguation gracefully even when the exact title doesn't exist.
-  return `https://en.wikipedia.org/wiki/Special:Search?go=Go&search=${encodeURIComponent(slug.replace(/_/g, ' '))}`;
+  // Modern IMD-named systems: "Cyclone <Name>" or "Cyclone <Name> (YYYY)" —
+  // search handles both, plus redirects and disambiguation.
+  const query = `Cyclone ${name} ${storm.year}`;
+  return `https://en.wikipedia.org/wiki/Special:Search?go=Go&search=${encodeURIComponent(query)}`;
 }
 
 export function youtubeUrl(storm) {
   const niceName = (!storm.name || storm.name === 'UNNAMED')
-    ? `${storm.year} hurricane`
+    ? `${storm.year} ${storm.basin === 'AS' ? 'Arabian Sea' : 'Bay of Bengal'} cyclone`
     : `${formatStormName(storm.name)} ${storm.year}`;
-  const peakCat = windToCategory(storm.peak_wind_kt);
-  const kind = peakCat >= 1 ? 'hurricane' : 'tropical storm';
-  return `https://www.youtube.com/results?search_query=${encodeURIComponent(`${kind} ${niceName} landfall`)}`;
+  return `https://www.youtube.com/results?search_query=${encodeURIComponent(`cyclone ${niceName} landfall India`)}`;
 }
 
-export function noaaTcrUrl(storm) {
-  // NOAA Tropical Cyclone Reports: only published from ~1958 onward, and well-indexed from 1995+.
-  if (storm.year < 1995) return null;
-  // The NHC "data" archive supports yearly indices.
-  return `https://www.nhc.noaa.gov/data/tcr/index.php?season=${storm.year}&basin=atl`;
+/** RSMC New Delhi (IMD) storm report. The per-year "preliminary report" index
+ *  lists one PDF per system and takes the year base64-encoded in the query, the
+ *  way the site's own year picker builds it. Those indices start at 2013; older
+ *  seasons are only in the annual "Report on Cyclonic Disturbances" volumes, so
+ *  those years get the annual-report index instead. */
+export function imdReportUrl(storm) {
+  if (storm.year < 1990) return null;
+  if (storm.year >= 2013) {
+    const year = typeof btoa === 'function' ? btoa(String(storm.year)) : String(storm.year);
+    return `https://rsmcnewdelhi.imd.gov.in/archive-report.php?internal_menu=MjY%3D&year=${encodeURIComponent(year)}`;
+  }
+  return 'https://rsmcnewdelhi.imd.gov.in/report.php?internal_menu=Mjc%3D';
 }
 
 export function renderImpactsBlock(storm, im = getImpactsFor(storm.id)) {
@@ -124,47 +127,19 @@ export function renderImpactsBlock(storm, im = getImpactsFor(storm.id)) {
   `;
 }
 
-/** Aircraft reconnaissance archive, from NHC itself. Hurricane Hunters fly into
- *  Atlantic-basin storms threatening land: vortex messages, high-density
- *  observations and dropsonde data.
- *
- *  This used to point at tropicalatlantic.com, which now redirects to
- *  tropicalglobe.com and drops both the path and the query on the way, so every
- *  storm's "Recon archive" button landed on an unrelated homepage. The same
- *  path on the new host answers 403 even to a browser. check:links found it.
- *
- *  NHC publishes the products itself, one directory per year. That is coarser
- *  than a per-storm page, so the storm name is no longer part of the URL and no
- *  longer gates the link: an unnamed storm's year has a recon directory like
- *  any other. 1989 is the earliest year NHC serves; 1988 is a 404, checked. */
-export function reconArchiveUrl(storm) {
-  if (storm.basin !== 'AL') return null;
-  if (storm.year < 1989) return null;
-  return `https://www.nhc.noaa.gov/archive/recon/${storm.year}/`;
+/** IMD best-track archive. IMD publishes digitised best tracks for the North
+ *  Indian Ocean from 1982 onward, one file per season, from a single index. */
+export function imdBestTrackUrl(storm) {
+  if (storm.year < 1982) return null;
+  return 'https://rsmcnewdelhi.imd.gov.in/report.php?internal_menu=MzM%3D';
 }
 
-export function nhcWalletUrlFor(storm) {
-  // NHC storm wallet: 1995-onward, numbered AL/EPxxYYYY.
-  if (storm.year < 1995) return null;
-  return `https://www.nhc.noaa.gov/archive/${storm.year}/${storm.id}.shtml`;
-}
-
-/** Open the storm's first U.S. landfall on CIRA's RAMMB SLIDER. SLIDER carries
- *  GOES-16 (East) imagery from late 2017 onward. We pin to the storm's first
- *  landfall time so the user lands on the eyewall over the coast. */
-export function sliderSatelliteUrl(storm) {
-  if (storm.year < 2018) return null;
-  const lfs = storm.us_landfalls || [];
-  const refIso = lfs.length ? lfs[0].t : storm.track[0]?.t;
-  if (!refIso) return null;
-  const ts = new Date(refIso);
-  // SLIDER takes Unix seconds and a sector. CONUS sector is the right scale
-  // for U.S. landfalls; tropical-atlantic for storms still over open ocean.
-  const unix = Math.floor(ts.getTime() / 1000);
-  // GOES-19 replaced goes-16 as East on 2025-04-07; Hawaii needs GOES-18.
-  const isHawaii = lfs.length && lfs[0].state === 'Hawaii';
-  const sat = isHawaii ? 'goes-18' : 'goes-19';
-  const sec = isHawaii ? 'full_disk' : 'conus';
-  // GeoColor is most legible day-and-night. Canonical CIRA host only.
-  return `https://slider.cira.colostate.edu/?sat=${sat}&sec=${sec}&start_unix=${unix}&time_step=10&motion=loop&im=12`;
+/** MOSDAC (ISRO) satellite view of the storm. SCORPIO is MOSDAC's cyclone
+ *  archive: it takes a year and a cyclone name in its own picker, and carries
+ *  INSAT imagery for named systems from 2010 onward. Unnamed systems and older
+ *  seasons fall back to MOSDAC's cyclone landing page. */
+export function mosdacSatelliteUrl(storm) {
+  if (storm.year < 2010) return null;
+  if (!storm.name || storm.name === 'UNNAMED') return 'https://www.mosdac.gov.in/cyclone';
+  return `https://mosdac.gov.in/scorpio/?year=${storm.year}&cyclone=${encodeURIComponent(formatStormName(storm.name).toUpperCase())}`;
 }

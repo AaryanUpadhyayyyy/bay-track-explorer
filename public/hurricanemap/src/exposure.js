@@ -63,7 +63,7 @@ export function buildStateDensityIndex(usStatesGeojson) {
     .filter(Boolean));
 }
 
-export async function ensureExposureDensitiesLoaded(url = './data/us-states.geojson') {
+export async function ensureExposureDensitiesLoaded(url = './data/india-states.geojson') {
   if (cachedStateDensities) {
     // buildStateDensityIndex returns a plain object, not a Map: counting it
     // with .size silently reported no items at all.
