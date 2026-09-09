@@ -8,6 +8,7 @@ const CESIUM_CSS_URL = `${CESIUM_BASE_URL}Widgets/widgets.css`;
 // PING re-establishes it (see adoptParentOrigin) instead of failing closed.
 let parentOrigin = referrerOrigin(document.referrer);
 const ALLOWED_MESSAGES = new Set(['PING', 'INIT', 'TIMELINE', 'LAYERS', 'RESET', 'FOCUS']);
+const ENGINE_TIMEOUT_MS = 30_000;
 const MAX_SEGMENTS = 20_000;
 const MAX_CONES = 5_000;
 const MAX_TIMELINE = 10_000;
@@ -204,6 +205,13 @@ function ensureViewer(Cesium, background) {
     shouldAnimate: false,
   });
   viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString(background);
+  // Cesium's default imagery needs an Ion token; OpenStreetMap tiles need none,
+  // so the globe shows an actual Earth instead of a black sphere.
+  try {
+    viewer.imageryLayers.addImageryProvider(new Cesium.OpenStreetMapImageryProvider({
+      url: 'https://tile.openstreetmap.org/',
+    }));
+  } catch { /* imagery is optional; keep the base colour */ }
   viewer.scene.globe.showGroundAtmosphere = true;
   viewer.scene.skyAtmosphere.show = true;
   viewer.scene.requestRenderMode = true;
