@@ -10,7 +10,7 @@
 export default {
   // Header & navigation
   'header.title': 'HurricaneMap',
-  'header.subtitle': '174-year U.S. Hurricane Landfall Atlas',
+  'header.subtitle': 'North Indian Ocean Cyclone Landfall Atlas (1842-2025)',
   'header.btn.settings': 'Settings',
   'header.btn.info': 'About',
   'header.btn.stats': 'Statistics',
@@ -475,7 +475,7 @@ export default {
   'stats.deadliest': 'Deadliest',
   'stats.costliest': 'Costliest',
   'stats.climatologyChart': 'Annual climatology',
-  'climatology.loading': 'Computing 174-year climatology…',
+  'climatology.loading': 'Computing 183-year climatology…',
   'stats.decadeTrends': 'Decade trends',
   'stats.climateTrends': 'Climate trends',
   'stats.decadeColumn': 'Decade',
