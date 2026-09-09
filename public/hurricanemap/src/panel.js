@@ -45,7 +45,6 @@ import { renderDaysAtIntensity, renderSimilarStorms } from './panel-analysis.js'
 import { renderTrackTimeline } from './table-view.js';
 import { fetchWithTimeout, REQUEST_TIMEOUT_MS } from './network.js';
 import { inspectRadarFrameCache } from './storage-manager.js';
-import { cancelFemaRequest, loadFemaContext } from './fema-panel.js';
 const panel = document.getElementById('storm-panel');
 const body = document.getElementById('panel-body');
 const stickyHeader = document.getElementById('panel-sticky-header');
@@ -118,7 +117,6 @@ closeBtn.addEventListener('click', () => {
   // hidePanel dispatches hm-panel:hidden, and the handler below runs the
   // overlay teardown, so only the parts unique to a real close belong here.
   hidePanel('storm-panel');
-  cancelFemaRequest();
   document.dispatchEvent(new CustomEvent('storm-panel:close'));
 });
 // Other managed panels hide the storm panel through panels.js. Keep map-owned
@@ -203,12 +201,9 @@ function render(storm, landfall, allStorms, advisoryReplay = null, renderSeq = s
 
   const wikiUrl = wikipediaUrl(storm);
   const ytUrl = youtubeUrl(storm);
-  const noaaReportUrl = noaaTcrUrl(storm);
-  const nhcWalletUrl = nhcWalletUrlFor(storm);
-  const sliderUrl = sliderSatelliteUrl(storm);
-  const tornadoUrl = tornadoSearchUrl(storm);
-  const tornadoHint = tornadoSearchHint(storm);
-  const reconUrl = reconArchiveUrl(storm);
+  const imdStormReportUrl = imdReportUrl(storm);
+  const imdTrackUrl = imdBestTrackUrl(storm);
+  const mosdacUrl = mosdacSatelliteUrl(storm);
 
   const radarApi = getRadar();
   const landfallsHtml = storm.us_landfalls && storm.us_landfalls.length > 0 
@@ -344,22 +339,13 @@ function render(storm, landfall, allStorms, advisoryReplay = null, renderSeq = s
         <h3 class="panel-section-h3">${t('panel.landfallsSection')}</h3>
         <ul class="landfall-list">${landfallsHtml}</ul>
         <div class="radar-cache-status" id="radar-cache-status" data-storm-id="${escapeHtml(storm.id)}" role="status" aria-live="polite">${escapeHtml(t('radar.cacheChecking'))}</div>
-        <section class="fema-context" id="fema-context" data-state="loading" aria-labelledby="fema-context-title">
-          <div class="fema-context-heading">
-            <h3 id="fema-context-title">${t('panel.femaTitle')}</h3>
-            <a href="https://www.fema.gov/api/open/v2/DisasterDeclarationsSummaries" target="_blank" rel="noopener">${t('panel.femaSource')}</a>
-          </div>
-          <div class="fema-context-body" role="status" aria-live="polite">${t('panel.femaLoading')}</div>
-        </section>
 
         <div class="action-row">
           ${wikiUrl ? `<a class="action-btn primary" href="${escapeHtml(wikiUrl)}" target="_blank" rel="noopener">Wikipedia</a>` : ''}
           ${ytUrl ? `<a class="action-btn" href="${escapeHtml(ytUrl)}" target="_blank" rel="noopener">${t('links.youtube')}</a>` : ''}
-          ${noaaReportUrl ? `<a class="action-btn" href="${escapeHtml(noaaReportUrl)}" target="_blank" rel="noopener">${t('links.noaaReport')}</a>` : ''}
-          ${nhcWalletUrl ? `<a class="action-btn" href="${escapeHtml(nhcWalletUrl)}" target="_blank" rel="noopener">${t('links.nhcArchive')}</a>` : ''}
-          ${sliderUrl ? `<a class="action-btn" href="${escapeHtml(sliderUrl)}" target="_blank" rel="noopener">${t('links.goesSatellite')}</a>` : ''}
-          ${tornadoUrl ? `<a class="action-btn" href="${escapeHtml(tornadoUrl)}" title="${escapeHtml(t('links.tornadoHint', tornadoHint?.states, tornadoHint?.from, tornadoHint?.to))}" target="_blank" rel="noopener">Storm Events (NOAA)</a>` : ''}
-          ${reconUrl ? `<a class="action-btn" href="${escapeHtml(reconUrl)}" target="_blank" rel="noopener">${t('links.reconArchive')}</a>` : ''}
+          ${imdStormReportUrl ? `<a class="action-btn" href="${escapeHtml(imdStormReportUrl)}" target="_blank" rel="noopener">IMD storm report</a>` : ''}
+          ${imdTrackUrl ? `<a class="action-btn" href="${escapeHtml(imdTrackUrl)}" target="_blank" rel="noopener">IMD best track</a>` : ''}
+          ${mosdacUrl ? `<a class="action-btn" href="${escapeHtml(mosdacUrl)}" target="_blank" rel="noopener">MOSDAC satellite</a>` : ''}
         </div>
 
         <div class="export-row">
@@ -494,7 +480,6 @@ function render(storm, landfall, allStorms, advisoryReplay = null, renderSeq = s
   renderTrackTimeline(document.getElementById('track-timeline-host'), storm);
   renderForecastSkill(document.getElementById('forecast-skill-host'), storm);
   refreshRadarCacheStatus(storm.id);
-  loadFemaContext(storm, renderSeq, currentSeq => currentSeq === showStormSeq);
   import('./tides.js')
     .then(({ renderTidesBlock }) => renderTidesBlock(document.getElementById('tides-host'), storm))
     .catch(() => { /* tide gauges are optional context */ });
