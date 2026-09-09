@@ -106,6 +106,13 @@ def load_tracks(path: Path) -> pd.DataFrame:
     frame["CI"] = numeric(frame.get("NEWDELHI_CI"))
 
     frame = frame.dropna(subset=["SID", "ISO_TIME", "LAT", "LON", "SEASON"])
+    # IBTrACS interleaves 3-hourly interpolated positions that carry no
+    # intensity. Keep the 6-hourly synoptic best-track rows plus any off-hour
+    # row that does report a wind (landfall specials), so every track point has
+    # the best intensity the archive offers.
+    hours = frame["ISO_TIME"].dt.hour
+    minutes = frame["ISO_TIME"].dt.minute
+    frame = frame[((hours % 6 == 0) & (minutes == 0)) | frame["WIND"].notna()]
     # Keep the basin box; IBTrACS NI includes a few strays from neighbours.
     frame = frame[frame["LAT"].between(-5, 35) & frame["LON"].between(40, 110)]
     return frame.sort_values(["SID", "ISO_TIME"])
@@ -223,10 +230,15 @@ def build() -> None:
                 "pres": pres,
                 "status": status,
                 "rec": "L" if is_landfall else None,
-                "imd_grade": grade or None,
-                "imd_grade_name": grade_name or None,
-                "imd_ci": numeric_or_none(row["CI"]),
             }
+            # Optional IMD fields are omitted when absent to keep the payload
+            # small; the frontend treats missing and null the same way.
+            if grade:
+                point["imd_grade"] = grade
+                point["imd_grade_name"] = grade_name
+            ci = numeric_or_none(row["CI"])
+            if ci is not None:
+                point["imd_ci"] = ci
             track.append(point)
 
             if is_landfall:
