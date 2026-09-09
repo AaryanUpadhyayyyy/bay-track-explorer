@@ -1,0 +1,682 @@
+.skip-to-content:focus {
+  top: 0;
+}
+
+/* High-contrast mode — WCAG AAA 7:1 minimum contrast ratios */
+html.high-contrast {
+  --base:   #000000;
+  --mantle: #0a0a0a;
+  --crust:  #1a1a1a;
+  --surface0: #2d2d2d;
+  --surface1: #404040;
+  --text:    #ffffff;  /* 21:1 contrast on black */
+  --subtext: #e0e0e0;  /* 19:1 contrast */
+  --overlay: #404040;
+  --blue:    #0047b2;  /* darkened for 7:1+ on white text */
+  --lavender:#4a0080;
+  --sapphire:#00539b;
+
+  /* Those three are darkened to carry white text on top of them. Text painted
+     IN an accent needs the opposite treatment on this near-black background,
+     so the ink tokens go light here. Measured against #000, #0a0a0a, #1a1a1a
+     and #2d2d2d: nothing below 8:1. */
+  --ink-accent:   #d0bfff;
+  --ink-link:     #9fdcff;
+  --ink-link-alt: #a8c7ff;
+  /* Pure yellow on pure black is 19.6:1, and the same pair is 19.6:1 the other
+     way up, so the light high-contrast theme inherits this rather than
+     restating it. */
+  --search-match-bg:  #ffff00;
+  --search-match-ink: #000000;
+  --brand-title-start: #ffffff;
+  --brand-title-end: #7dd3fc;
+
+  --cat-ts:  #00539b;  /* darker sapphire */
+  --cat-1:   #004d00;  /* darker green */
+  --cat-2:   #994c00;  /* darker yellow */
+  --cat-3:   #993300;  /* darker peach */
+  --cat-4:   #800020;  /* darker pink */
+  --cat-5:   #330099;  /* darker mauve */
+
+  --success: #00b300;  /* bright green */
+  --warning: #ccaa00;  /* bright yellow */
+  --error:   #ff0000;  /* bright red */
+  --info:    #0047b2;  /* bright blue */
+  --tide-observed: #00bfff;
+  --tide-predicted: #ffffff;
+  --tide-landfall: #ff5c8a;
+  --legend-swatch-border: #ffffff;
+
+  --glass-bg:   rgba(0, 0, 0, 0.95);
+  --glass-edge: rgba(255, 255, 255, 0.20);
+  --shadow:     0 8px 32px rgba(0, 0, 0, 0.8);
+
+  --shadow-sm:  0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-md:  0 4px 16px rgba(0, 0, 0, 0.4);
+  --shadow-lg:  0 8px 32px rgba(0, 0, 0, 0.6);
+  --shadow-xl:  0 12px 48px rgba(0, 0, 0, 0.8);
+
+  font-size: 18px; /* +2px larger base font */
+  font-weight: 500; /* bolder text overall */
+}
+
+/* High-contrast light mode — WCAG AAA on light backgrounds */
+html.light-theme.high-contrast {
+  --base:   #ffffff;
+  --mantle: #f5f5f5;
+  --crust:  #e8e8e8;
+  --surface0: #d0d0d0;
+  --surface1: #b8b8b8;
+  --text:    #000000;  /* 21:1 contrast on white */
+  --subtext: #1a1a1a;  /* 19:1 contrast */
+  --overlay: #666666;
+  --blue:    #0047b2;  /* same darker blue */
+  --lavender:#4a0080;
+  --sapphire:#00539b;
+
+  /* Here the page is white, so ink stays dark. The surface values are close to
+     right already; sapphire and blue are taken down far enough to clear 7:1 on
+     --surface0 (#d0d0d0) as well as on the white panels. */
+  --ink-accent:   #4a0080;
+  --ink-link:     #003d73;
+  --ink-link-alt: #003472;
+  /* The dark high-contrast block above sets these for a black ground. On a
+     white one its #ff9db3 measured 1.58:1, which is the same defect this pass
+     was fixing, one theme over. */
+  --intensity-landfall: #8a0020;
+  --intensity-ri: #8a0020;
+  --intensity-pressure-line: var(--ink-link);
+  /* The dark block sets this from --border-strong, which is white at 38% there
+     and therefore invisible on a white chart: the six reference lines at 34,
+     64, 83, 96, 113 and 137 kt simply were not drawn. */
+  --intensity-grid-line: rgba(0, 0, 0, 0.55);
+  --intensity-cursor: var(--text);
+  --intensity-dot-stroke: var(--text);
+  --brand-title-start: #000000;
+  --brand-title-end: #0047b2;
+
+  --cat-ts:  #00539b;
+  --cat-1:   #004d00;
+  --cat-2:   #994c00;
+  --cat-3:   #993300;
+  --cat-4:   #800020;
+  --cat-5:   #330099;
+
+  --success: #004d00;
+  --warning: #994c00;
+  --error:   #800020;
+  --info:    #0047b2;
+  --tide-observed: #0047b2;
+  --tide-predicted: #1a1a1a;
+  --tide-landfall: #800020;
+  --legend-swatch-border: #000000;
+
+  /* The light theme's pin colours clear AA on the panel but not the AAA bar
+     this mode holds itself to: the mauve measured 5.33:1 where 7:1 is wanted.
+     These four are 8.17:1 to 10.46:1 on white. The dark high-contrast theme
+     already clears it at 10.34:1 with the standard set. */
+  --pin-1: #5b0f9e;
+  --pin-2: #0a3fa8;
+  --pin-3: #8c3200;
+  --pin-4: #0f5a13;
+
+  --glass-bg:   rgba(255, 255, 255, 0.98);
+  --glass-edge: rgba(0, 0, 0, 0.20);
+  --shadow:     0 8px 32px rgba(0, 0, 0, 0.15);
+
+  --shadow-sm:  0 2px 8px rgba(0, 0, 0, 0.08);
+  --shadow-md:  0 4px 16px rgba(0, 0, 0, 0.12);
+  --shadow-lg:  0 8px 32px rgba(0, 0, 0, 0.15);
+  --shadow-xl:  0 12px 48px rgba(0, 0, 0, 0.2);
+}
+
+/* Focus is painted in ONE place, the block further down whose selector list
+   covers every button, link, [role="button"], [tabindex] and the number, search
+   and select inputs. Roughly fifteen per-control rules used to sit here setting
+   an outline, a box-shadow and a border-colour for those same controls, and not
+   one of them reached the screen: the block below carried !important and
+   suppressed all of them. They have been deleted rather than left looking
+   load-bearing, and the !important went with them, because nothing is left for
+   it to suppress.
+   What survives here is only what that block does NOT set: a border-radius so
+   the ring follows the control's corners, the backgrounds two controls change
+   on focus, and the controls its selector never matched, which are the range
+   input, the checkbox and the radio. */
+.side-panel :is(h1, h2, h3)[tabindex="-1"]:focus-visible {
+  border-radius: 4px;
+}
+
+/* A range input is matched by none of the focus rules above it, so this is the
+   only thing marking it. It used to take an outline from the --focus-color
+   block; when that went, all that was left here was the glow below, and a
+   40%-alpha lavender blur on a white surface is not a focus indicator. The
+   token carries a high-contrast override, which the hard-coded glow does not. */
+.anim-scrubber:focus-visible {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: 2px;
+}
+
+.anim-scrubber:focus {
+  box-shadow: 0 0 12px rgba(180, 190, 254, 0.4);
+}
+
+/* A select, so the shared block paints its ring; only the background is its
+   own. Its border-colour used to be set here too, and once the !important came
+   off, .anim-speed:focus would have outranked select:focus on specificity and
+   taken the ring back. */
+.anim-speed:focus {
+  background: rgba(180, 190, 254, 0.08);
+}
+
+/* Phase 2: Input Focus Enhancement */
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: none;
+  box-shadow: 
+    inset 0 0 0 2px rgba(170, 183, 255, 0.5),
+    var(--focus-ring-soft);
+}
+
+/* The shared block's selector never matches these two, so this really is their
+   focus ring. It used to be drawn in --lavender, which high contrast redefines
+   to a near-black #4a0080 for use behind white text: the ring measured 1.5:1 on
+   the high-contrast page, which is no ring at all. --focus-ring-color is the
+   token the rest of the focus system uses and high contrast takes it to white. */
+input[type="checkbox"]:focus-visible,
+input[type="radio"]:focus-visible {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: 2px;
+}
+
+.filter-row:focus-within {
+  background: rgba(170, 183, 255, 0.05);
+}
+
+a:focus-visible, [role="button"]:focus-visible {
+  border-radius: 2px;
+}
+
+.timeline-toggle:focus-visible {
+  border-radius: 8px;
+}
+
+input[type="number"]:focus,
+input[type="search"]:focus,
+select:focus {
+  background: var(--surface-raised);
+}
+
+html.high-contrast {
+  --panel-bg: var(--glass-bg);
+  --panel-border: var(--glass-edge);
+  --category-ink: #ffffff;
+}
+
+.filter-row:focus-within,
+.filter-group:focus-within {
+  background: rgba(180, 190, 254, 0.055);
+}
+
+.toggle-row:hover,
+.toggle-row:focus-within {
+  background: var(--control-bg-hover);
+  border-color: rgba(180, 190, 254, 0.26);
+}
+
+html.high-contrast {
+  --surface-app: var(--base);
+  --surface-panel: var(--mantle);
+  --surface-elevated: var(--crust);
+  --surface-control: var(--crust);
+  --surface-control-hover: var(--surface0);
+  --surface-control-active: var(--surface1);
+  --border-subtle: var(--glass-edge);
+  --border-strong: rgba(255, 255, 255, 0.38);
+  --border-accent: currentColor;
+  --focus-ring-color: var(--text);
+  /* 0.34 measured 2.89:1 on black, under the 3:1 this mode is meant to exceed
+     comfortably. Opaque, it is 17:1 to 21:1. */
+  --focus-ring-soft: 0 0 0 4px #ffffff;
+  --intensity-wind-line: var(--text);
+  /* --sapphire measured 2.43:1 against the high-contrast panel, under the 3:1
+     a non-text graphic asks for. The link ink in this mode is already tuned for
+     this ground. */
+  --intensity-pressure-line: var(--ink-link);
+  --intensity-grid-line: var(--border-strong);
+  --intensity-axis-line: var(--text);
+  --intensity-landfall: #ff9db3;
+  --intensity-ri: #ff9db3;
+  --intensity-dot-stroke: var(--text);
+  --intensity-cursor: var(--text);
+  --disabled-opacity: 0.72;
+}
+
+/* Scoped to high contrast, which is what these were written for. Unscoped and
+   !important in the last layer, they beat every component hover rule in every
+   theme, which is why the white-tint hovers in styles-components.css were dead
+   code and why any hover styling added there did nothing at all. */
+html.high-contrast .icon-btn:hover,
+html.high-contrast .text-btn:hover,
+html.high-contrast .settings-pill:hover,
+html.high-contrast .settings-action:hover,
+html.high-contrast .action-btn:hover,
+html.high-contrast .export-btn:hover,
+html.high-contrast .ct-btn:hover,
+html.high-contrast .radar-btn:hover,
+html.high-contrast .anim-btn:hover,
+html.high-contrast .toggle-row:hover,
+html.high-contrast .toggle-row:focus-within,
+html.high-contrast .state-storm-row:hover,
+html.high-contrast .search-results li:hover,
+html.high-contrast .cat-btn:not(.on):hover {
+  background: var(--surface-control-hover) !important;
+  border-color: var(--border-accent) !important;
+  color: var(--foreground) !important;
+}
+
+/* The one focus treatment, for every control the app has. The !important flags
+   this used to carry existed only to beat the per-control rules above, which
+   are gone, so they are gone too. Order still matters: this sits after the
+   input/select/textarea rule so a focused select takes this ring rather than
+   that one, which is the behaviour the flags used to force. */
+input[type="number"]:focus,
+input[type="search"]:focus,
+select:focus,
+button:focus-visible,
+a:focus-visible,
+[role="button"]:focus-visible,
+[tabindex]:focus-visible {
+  outline: none;
+  border-color: var(--focus-ring-color);
+  box-shadow: var(--focus-ring-soft);
+}
+
+html.high-contrast {
+  --on-category: #ffffff;
+}
+
+.globe3d-toggle:focus-within {
+  outline: 2px solid rgba(180, 190, 254, 0.78);
+  outline-offset: 2px;
+}
+
+.globe3d-actions .text-btn:hover,
+.globe3d-actions .text-btn:focus-visible {
+  background: rgba(116, 199, 236, 0.17);
+  border-color: rgba(116, 199, 236, 0.42);
+}
+
+.globe3d-timeline input[type="range"]:focus-visible {
+  outline: 2px solid rgba(180, 190, 254, 0.78);
+  outline-offset: 4px;
+  border-radius: 8px;
+}
+
+html.high-contrast .globe3d-topbar {
+  background: rgba(0, 0, 0, 0.94);
+  border: 2px solid #ffffff;
+}
+
+/* The sortable headers and the storm rows carry tabindex="0", so the shared
+   block matches them, but it marks focus with a box-shadow and Chromium does
+   not paint one on a <tr> inside a border-collapse table. Measured: focusing a
+   row changed exactly a 2px strip at its bottom edge, which is the shared
+   block's border-color landing on the collapsed border, and nothing else. So
+   these do need their own outline. Not the --lavender they used to use, which
+   high contrast turns into a near-black meant for sitting behind white text. */
+.table-view-table th:focus-visible,
+.table-view-table tr[data-sid]:focus-visible {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: -2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .hurricane-glyph, .ab-pulse, .loading .spinner,
+  .storm-loading-dot, .hurricane-icon, .onb-spotlight,
+  .onb-overlay, .hm-toast { animation: none !important; }
+  .glass::before, .stat-grid .stat::before,
+  .storm-panel h2::after, .cat-btn::before,
+  .search-results li::before { display: none; }
+  body.side-panel-open .leaflet-control-container .leaflet-right,
+  body.side-panel-open .filters,
+  body.side-panel-open .timeline-ribbon,
+  body.side-panel-open .season-summary { transform: none !important; }
+}
+
+/* Same as the table rows: these list items carry tabindex="0", so the shared
+   block paints their keyboard ring. This rule keyed on :focus rather than
+   :focus-visible, so the one thing it still did was draw a ring after a mouse
+   click, which no other control in the app does. */
+
+.panel-min-btn:focus-visible {
+  border-color: var(--focus-ring-color);
+  box-shadow: var(--focus-ring-soft);
+}
+
+.side-panel.minimized .panel-restore-bar:focus-visible {
+  border-color: var(--focus-ring-color);
+  box-shadow: var(--focus-ring-soft);
+}
+
+/* ==========================================================================
+   Theme correctness pass — colorblind palette wiring, climatology chart,
+   high-contrast/light contrast repairs, focus visibility, basemap fallback.
+   ========================================================================== */
+
+/* Colorblind palette (ColorBrewer YlOrRd). Previously only the JS marker
+   palette switched; the CSS --cat-* tokens driving the legend dots, category
+   buttons, pills, DAI segments, and timeline bars never changed, so enabling
+   the accessibility palette made the legend contradict the map. */
+body.palette-colorblind {
+  --cat-ts: #ffeda0;
+  --cat-1:  #fed976;
+  --cat-2:  #feb24c;
+  --cat-3:  #fd8d3c;
+  --cat-4:  #f03b20;
+  --cat-5:  #bd0026;
+}
+
+/* High contrast may be enabled at the same time as the colorblind palette.
+   The palette override arrives after the HC category tokens, so its four
+   light steps need dark ink while the two red steps retain white ink. */
+html.high-contrast body.palette-colorblind .cat-pill.cat-ts,
+html.high-contrast body.palette-colorblind .cat-pill.cat-1,
+html.high-contrast body.palette-colorblind .cat-pill.cat-2,
+html.high-contrast body.palette-colorblind .cat-pill.cat-3,
+html.high-contrast body.palette-colorblind .cat-pill.cat-4,
+html.high-contrast body.palette-colorblind .cat-btn.on.cat-ts,
+html.high-contrast body.palette-colorblind .cat-btn.on.cat-1,
+html.high-contrast body.palette-colorblind .cat-btn.on.cat-2,
+html.high-contrast body.palette-colorblind .cat-btn.on.cat-3,
+html.high-contrast body.palette-colorblind .cat-btn.on.cat-4,
+html.high-contrast body.palette-colorblind .dai-seg.cat-ts,
+html.high-contrast body.palette-colorblind .dai-seg.cat-1,
+html.high-contrast body.palette-colorblind .dai-seg.cat-2,
+html.high-contrast body.palette-colorblind .dai-seg.cat-3 {
+  color: #11111b !important;
+}
+
+html.high-contrast body.palette-colorblind {
+  --cat-ts: #ffeda0;
+  --cat-1:  #fed976;
+  --cat-2:  #feb24c;
+  --cat-3:  #fd8d3c;
+  --cat-4:  #f03b20;
+  --cat-5:  #bd0026;
+}
+
+/* Category ink. The hardcoded #11111b on pills defeated the --on-category
+   token: high-contrast darkens the category hues (cat-5 #330099 → 1.4:1 with
+   dark ink), and light theme's cat-4/#d20f39 and cat-5/#8839ef sit below
+   4.5:1 with dark ink as well. */
+.cat-pill.cat-ts,
+.cat-pill.cat-1,
+.cat-pill.cat-2,
+.cat-pill.cat-3,
+.cat-pill.cat-4,
+.cat-pill.cat-5 {
+  color: var(--on-category);
+}
+
+/* High-contrast dark never overrode --on-accent, leaving #11111b ink on the
+   darkened accent gradient (1.4-2.4:1) for pressed toggles, active settings
+   pills, and the Play button. */
+html.high-contrast {
+  --on-accent: #ffffff;
+}
+
+/* Focus visibility: the light-theme glow blended to ~1.3:1 on white, and
+   high-contrast light inherited a *white* glow on a white page. Opaque-enough
+   rings restore the WCAG 3:1 non-text minimum. */
+html.light-theme {
+  --focus-ring-color: #6d28d9;
+  --focus-ring-soft: 0 0 0 3px rgba(109, 40, 217, 0.75);
+}
+
+html.light-theme.high-contrast {
+  --focus-ring-color: #000000;
+  --focus-ring-soft: 0 0 0 4px rgba(0, 0, 0, 0.6);
+}
+
+/* High-contrast dark used --overlay (#404040) as dim TEXT (~1.9:1 on black) —
+   unchecked category buttons, section headings, search section labels. */
+html.high-contrast:not(.light-theme) {
+  --text-dim: #a6a6a6;
+  --foreground-subtle: #a6a6a6;
+}
+
+/* The row is not the focused element, so the shared block never reached it and
+   this outline is the only thing marking which toggle has focus. The two button
+   selectors that used to share this rule are gone: they ARE matched by the
+   shared block, so their outline had been suppressed all along and painting it
+   now would be a change, not a fix. */
+.settings-menu .toggle-row:has(input:focus-visible) {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .art-risk-path--animated { animation: none; stroke-dasharray: none; }
+}
+
+html.high-contrast #map .leaflet-tile-pane {
+  filter: none;
+}
+
+/* The JS setting applies .reduce-motion even when the OS preference is not
+   set. Keep this accessibility contract after component and theme motion
+   declarations so it remains a normal layer-governed override. */
+.reduce-motion *,
+.reduce-motion *::before,
+.reduce-motion *::after {
+  animation-duration: 0.01ms;
+  animation-iteration-count: 1;
+  transition-duration: 0.01ms;
+  scroll-behavior: auto;
+}
+
+.reduce-motion .hurricane-glyph,
+.reduce-motion .ab-pulse,
+.reduce-motion .loading .spinner {
+  animation: none;
+}
+
+/* Windows High Contrast and other forced-colors user agents replace author
+   colors with system colors. Remove glass effects from the app chrome while
+   leaving the map imagery and data overlays intact. */
+@media (forced-colors: active) {
+  html,
+  body {
+    background: Canvas;
+    color: CanvasText;
+  }
+
+  /* forced-colors overrides the author pair above. Mark/MarkText is the
+     system's own highlight, which is what the user asked their OS for. */
+  ::highlight(hm-search-match) {
+    background-color: Mark;
+    color: MarkText;
+  }
+
+  #map {
+    background: Canvas;
+  }
+
+  #map .leaflet-tile-pane,
+  #map .leaflet-overlay-pane {
+    forced-color-adjust: none;
+  }
+
+  .app-header,
+  .atlas-context-rail,
+  .filters,
+  .side-panel,
+  .storm-panel,
+  .stats-panel,
+  .compare-panel,
+  .state-panel,
+  .on-this-date-panel,
+  .table-view-panel,
+  .spatial-results,
+  .glass,
+  .tropical-alert-legend,
+  .nhc-outlook-legend,
+  .marine-warning-legend,
+  .art-mode-legend,
+  .cone-retro-legend {
+    background: Canvas;
+    background-image: none;
+    color: CanvasText;
+    border-color: CanvasText;
+    box-shadow: none;
+    text-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    forced-color-adjust: auto;
+  }
+
+  .glass::before,
+  .glass::after {
+    display: none;
+  }
+
+  button,
+  input,
+  select,
+  textarea,
+  [role="button"] {
+    background: ButtonFace;
+    color: ButtonText;
+    border-color: ButtonText;
+    forced-color-adjust: auto;
+  }
+
+  button:hover,
+  button[aria-pressed="true"],
+  button[aria-checked="true"],
+  .cat-btn.on,
+  .settings-pill.on,
+  .settings-action.on,
+  [role="button"][aria-pressed="true"] {
+    background: Highlight;
+    color: HighlightText;
+    border-color: Highlight;
+  }
+
+  button:disabled,
+  input:disabled,
+  select:disabled,
+  textarea:disabled {
+    color: GrayText;
+    border-color: GrayText;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: GrayText;
+    opacity: 1;
+  }
+
+  a,
+  .leaflet-control-attribution a {
+    color: LinkText;
+  }
+
+  :focus-visible {
+    outline: 2px solid Highlight !important;
+    outline-offset: 2px;
+    box-shadow: none !important;
+  }
+
+  .filter-legend,
+  .filter-legend-list,
+  .legend-heading,
+  .dai-legend,
+  .chart-legend,
+  .clim-legend,
+  .advisory-replay-legend,
+  .tropical-alert-legend,
+  .nhc-outlook-legend,
+  .marine-warning-legend,
+  .art-mode-legend,
+  .cone-retro-legend {
+    color: CanvasText;
+  }
+
+  .filter-legend,
+  .dai-legend,
+  .chart-legend,
+  .clim-legend,
+  .advisory-replay-legend {
+    background: Canvas;
+    border-color: CanvasText;
+  }
+
+  .dot,
+  .cat-pill,
+  .advisory-swatch,
+  .clim-swatch,
+  .marine-risk-swatch,
+  .nhc-outlook-x {
+    background: Canvas;
+    border-color: ButtonText;
+    color: ButtonText;
+    forced-color-adjust: auto;
+  }
+
+  /* These are not decoration: each one IS the datum. Repainting them to Canvas
+     leaves the year histogram an empty box and every legend a column of blank
+     squares, so the reader loses the category key, the comparison key, the
+     season tiers and the radar scale at once. The user agent must keep its
+     hands off them. */
+  .tl-bar,
+  .timeline-legend-item i,
+  .ct-dot,
+  .cp-swatch,
+  .dai-seg,
+  .tal-swatch,
+  .ss-tier-dot,
+  .radar-swatch,
+  .cp-header-swatch {
+    forced-color-adjust: none;
+    /* Keeping the fill means keeping the app's palette against a background the
+       reader chose, which can land anywhere. Every one of them therefore keeps
+       a system-coloured outline, so the swatch is still findable when its fill
+       happens to sit close to the user's canvas. box-sizing keeps the histogram
+       bars the width they were laid out at. */
+    border: 1px solid CanvasText;
+    box-sizing: border-box;
+  }
+
+  .leaflet-control-zoom a,
+  .leaflet-control-attribution,
+  .leaflet-control-layers,
+  .leaflet-control-scale {
+    background: ButtonFace;
+    color: ButtonText;
+    border-color: ButtonText;
+    box-shadow: none;
+  }
+
+  .leaflet-control-zoom a:hover {
+    background: Highlight;
+    color: HighlightText;
+  }
+
+  .leaflet-control-attribution a {
+    color: LinkText;
+  }
+
+  table,
+  th,
+  td {
+    border-color: ButtonText;
+  }
+}

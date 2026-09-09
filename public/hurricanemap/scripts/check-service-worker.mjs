@@ -1,0 +1,302 @@
+import { access, readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const swPath = path.join(root, 'sw.js');
+const source = await readFile(swPath, 'utf8');
+
+const versionMatch = source.match(/const\s+SW_VERSION\s*=\s*['"]([^'"]+)['"]/);
+if (!versionMatch) {
+  console.error('sw.js does not define SW_VERSION.');
+  process.exit(1);
+}
+
+const packageJson = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
+const expectedSwVersion = `hm-v${packageJson.version}`;
+if (versionMatch[1] !== expectedSwVersion) {
+  console.error(`sw.js SW_VERSION ${versionMatch[1]} does not match package.json ${expectedSwVersion}.`);
+  process.exit(1);
+}
+
+if (!/addEventListener\(\s*['"]message['"]/.test(source) || !/SKIP_WAITING/.test(source)) {
+  console.error('sw.js must listen for SKIP_WAITING messages so users control update activation.');
+  process.exit(1);
+}
+
+const shellAssets = parseAssetArray('SHELL_ASSETS');
+const moduleEntrypoints = parseAssetArray('MODULE_ENTRYPOINTS');
+const offlineDataAssets = parseAssetArray('OFFLINE_DATA_ASSETS');
+const sourceBundleAssets = parseAssetArray('SOURCE_BUNDLE_ASSETS');
+
+if (!shellAssets) {
+  console.error('sw.js does not define SHELL_ASSETS.');
+  process.exit(1);
+}
+if (!moduleEntrypoints) {
+  console.error('sw.js does not define MODULE_ENTRYPOINTS.');
+  process.exit(1);
+}
+if (!offlineDataAssets) {
+  console.error('sw.js does not define OFFLINE_DATA_ASSETS.');
+  process.exit(1);
+}
+if (!sourceBundleAssets) {
+  console.error('sw.js does not define SOURCE_BUNDLE_ASSETS.');
+  process.exit(1);
+}
+
+const assets = [
+  ['shell', shellAssets],
+  ['module entrypoint', moduleEntrypoints],
+  ['offline data', offlineDataAssets],
+  ['source bundle', sourceBundleAssets],
+];
+const errors = [];
+const seen = new Set();
+
+const moduleGraph = await deriveModuleGraph(moduleEntrypoints, errors);
+if (!moduleGraph.length) {
+  errors.push('MODULE_ENTRYPOINTS did not produce a discoverable application graph.');
+}
+for (const shellAsset of shellAssets) {
+  if (shellAsset.startsWith('./src/') && shellAsset.endsWith('.js') && shellAsset !== './src/globe-host.js') {
+    errors.push(`SHELL_ASSETS must not hand-enumerate application module: ${shellAsset}`);
+  }
+}
+
+for (const required of [
+  './data/landfalls.json',
+  './data/storms.json.gz',
+  './data/stats.json',
+  './data/metadata.json',
+  './data/coverage.json',
+  './data/aoml-landfalls.json',
+  './data/us-states.geojson',
+  './data/hurdat2-sources.json',
+  './data/radar/manifest.json',
+]) {
+  if (!offlineDataAssets.includes(required)) {
+    errors.push(`OFFLINE_DATA_ASSETS is missing required historical dataset: ${required}`);
+  }
+}
+for (const sourceAsset of [
+  './data/hurdat2-atlantic.txt',
+  './data/hurdat2-nepac.txt',
+  './data/release-manifest.json',
+]) {
+  if (!sourceBundleAssets.includes(sourceAsset)) {
+    errors.push(`SOURCE_BUNDLE_ASSETS is missing optional source asset: ${sourceAsset}`);
+  }
+  if (offlineDataAssets.includes(sourceAsset)) {
+    errors.push(`${sourceAsset} must not be precached as mandatory offline data`);
+  }
+}
+
+if (!/indexedDB\.open/.test(source) || !/CompressionStream/.test(source) || !/DecompressionStream/.test(source)) {
+  errors.push('sw.js offline data path must use IndexedDB plus compression/decompression support.');
+}
+if (!/CHECK_OFFLINE_INTEGRITY/.test(source) ||
+    !/OFFLINE_INTEGRITY_RESULT/.test(source) ||
+    !/classifyOfflineIntegrity/.test(source)) {
+  errors.push('sw.js must report launch-time offline integrity states.');
+}
+if (!/const\s+DATA_CACHE_PREFIX\s*=\s*['"]hm-data-['"]/.test(source) ||
+    !/const\s+DATA_CACHE\s*=\s*`\$\{DATA_CACHE_PREFIX\}\$\{SW_VERSION\}`/.test(source) ||
+    !/const\s+RELEASE_MARKER_PATH/.test(source) ||
+    !/validateReleaseBundle\(\)/.test(source) ||
+    !/Required release manifest failed/.test(source) ||
+    !/const\s+SOURCE_BUNDLE_CACHE\s*=\s*['"]hm-source-bundle-v1['"]/.test(source) ||
+    !/SOURCE_BUNDLE_MARKER_PATH/.test(source) ||
+    !/sourceBundleWhileRevalidate/.test(source)) {
+  errors.push('sw.js must stage a versioned data cache and validate its release tuple before activation.');
+}
+if (!/RADAR_CACHE_MAX_ENTRIES/.test(source) || !/trimCache\(RADAR_CACHE,\s*RADAR_CACHE_MAX_ENTRIES\)/.test(source)) {
+  errors.push('sw.js must cap the on-demand radar cache.');
+}
+// The cap is why saved packs cannot live in that cache. A 120-frame pack plus
+// ordinary browsing crossed the 240-entry limit, so saving a third pack deleted
+// the first one's frames while the pack index still called it saved. The pack
+// cache has to exist, survive activation, be read before the LRU, and never be
+// handed to trimCache.
+if (!/const\s+RADAR_PACK_CACHE\s*=\s*['"]hm-radar-saved-v1['"]/.test(source)) {
+  errors.push('sw.js must name a radar pack cache that the LRU never trims.');
+}
+if (new RegExp('trimCache\\(\\s*RADAR_PACK_CACHE').test(source)) {
+  errors.push('sw.js must never trim the radar pack cache: those frames were saved deliberately.');
+}
+if (!/k !== RADAR_PACK_CACHE/.test(source)) {
+  errors.push('sw.js activate path must keep the radar pack cache instead of deleting it as unknown.');
+}
+if (!/caches\.open\(RADAR_PACK_CACHE\)/.test(source) ||
+    !new RegExp('function radarFrame\\(').test(source)) {
+  errors.push('sw.js must serve a saved radar frame from the pack cache before falling through to the LRU.');
+}
+if (/stamen|opentopomap/.test(source) || !source.includes('mesonet\\.agron\\.iastate\\.edu')) {
+  errors.push('sw.js tile caching must cover the app\'s IEM radar tiles without dead host matchers.');
+}
+if (!/pruneOfflineData\(\)/.test(source) || !/idbDeleteExcept/.test(source)) {
+  errors.push('sw.js activate path must prune removed offline-data records.');
+}
+if (!/const\s+DATA_DB_VERSION\s*=\s*1/.test(source) ||
+    !/LEGACY_DATA_DBS\s*=\s*\[['"]hm-offline-data-v1['"],\s*['"]hm-offline-data-v2['"]\]/.test(source) ||
+    !/deleteLegacyDataDbs\(\)/.test(source)) {
+  errors.push('sw.js must version IndexedDB and remove superseded database generations during activation.');
+}
+if (!/MODULE_ENTRYPOINTS/.test(source) ||
+    !/discoverModuleGraph\(\)/.test(source)) {
+  errors.push('service worker must derive its application shell from MODULE_ENTRYPOINTS.');
+}
+// Firefox 146 and earlier refuse a module service worker outright, and Firefox
+// ESR 140 is still supported, so src/sw-updates.js registers the same file as a
+// classic worker when the module type is rejected. That works only while the
+// file is valid as a classic script: no static imports, and no import.meta,
+// which is a SyntaxError outside a module. self.location.href is the worker's
+// own URL under both types, so it replaces import.meta.url.
+// The comment above sw.js's base-URL line names import.meta, so this reads the
+// code rather than the prose. A gate that its own explanation can trip is a
+// gate nobody keeps.
+const swCode = source
+  .replace(/\/\*[\s\S]*?\*\//g, ' ')
+  .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+if (/\bimport\s*\.\s*meta\b/.test(swCode)) {
+  errors.push('sw.js must not use import.meta: it is a SyntaxError in the classic worker fallback.');
+}
+if (/^\s*import\s[^(]/m.test(swCode)) {
+  errors.push('sw.js must not carry static import statements: a classic worker cannot parse them.');
+}
+if (!/new URL\('\.\/', self\.location\.href\)/.test(source)) {
+  errors.push('sw.js must resolve its own base from self.location.href, which works under both worker types.');
+}
+try {
+  // The same parser goal a classic worker body is given.
+  new Function(source);
+} catch (error) {
+  errors.push(`sw.js does not parse as a classic script, so the fallback registration cannot work: ${error.message}`);
+}
+// A client cannot tell which versioned caches are being served by looking at
+// the cache list: an install that fails after opening its caches leaves a pair
+// for a version that never activates, and only that version's activate would
+// remove them. The worker says which pair it is using, and cleans up after
+// itself when its own install fails, but only the caches that install created.
+if (!source.includes('sw_version: SW_VERSION, shell_cache: SHELL_CACHE, data_cache: DATA_CACHE')) {
+  errors.push('sw.js must name its own SW_VERSION, SHELL_CACHE and DATA_CACHE for the integrity result.');
+}
+// Declaring the names is not reporting them. One of the six returns in
+// classifyOfflineIntegrity omitted the spread, and it was the broken-offline
+// one: precisely when the panel most needs to know which caches are being
+// served, it fell back to guessing the highest version present. Count the
+// returns against the spreads rather than trusting the declaration.
+{
+  const start = source.indexOf('async function classifyOfflineIntegrity()');
+  const end = source.indexOf('\nasync function ', start + 1);
+  const body = start >= 0 ? source.slice(start, end > 0 ? end : undefined) : '';
+  const returns = (body.match(/return\s*\{/g) || []).length;
+  const carried = (body.match(/\.\.\.active,/g) || []).length;
+  if (!body) {
+    errors.push('classifyOfflineIntegrity is missing, so the integrity contract cannot be checked.');
+  } else if (returns !== carried) {
+    errors.push(
+      `classifyOfflineIntegrity has ${returns} object returns but only ${carried} carry ...active; `
+      + 'every integrity result has to name the caches the worker is serving.',
+    );
+  }
+}
+if (!source.includes('const preexisting = await caches.keys().then(names => new Set(names)).catch(() => null);') ||
+    !source.includes('if (preexisting)') ||
+    !source.includes('if (!preexisting.has(name)) await caches.delete(name)')) {
+  errors.push(
+    'sw.js install must delete the versioned caches it created when it fails, and only those, '
+    + 'and must delete nothing at all when it cannot read the cache list: an empty set there reads '
+    + 'as "this install created everything", which on a same-version reinstall is the running shell.',
+  );
+}
+
+if (!/RELEASE_LOCK_NAME/.test(source) ||
+    !/navigator(?:\?\.)?locks/.test(source) ||
+    !/withReleaseLock/.test(source)) {
+  errors.push('service worker install/validation handshake must use a Web Lock when available.');
+}
+
+const radarBranch = source.indexOf('if (isRadarAsset(url))');
+const shellBranch = source.indexOf('if (isShell(url))');
+if (radarBranch < 0 || shellBranch < 0 || radarBranch > shellBranch) {
+  errors.push('fetch handler must route radar PNGs before generic shell/image caching.');
+}
+// The branch has to dispatch to the reader that checks the pack cache first.
+// Asserting only that radarFrame() is defined somewhere let the fetch handler
+// go straight back to the LRU with the function sitting there unused.
+if (radarBranch >= 0) {
+  const branchBody = source.slice(radarBranch, source.indexOf('} else if', radarBranch));
+  if (!branchBody.includes('radarFrame(req')) {
+    errors.push('fetch handler must answer a radar PNG through radarFrame(), which reads the saved-pack cache before the LRU.');
+  }
+}
+
+for (const [label, collection] of assets) {
+  for (const asset of collection) {
+    if (seen.has(asset)) {
+      errors.push(`Duplicate ${label} asset: ${asset}`);
+      continue;
+    }
+    seen.add(asset);
+
+    if (asset === './') continue;
+    const normalized = path.normalize(asset.replace(/^\.\//, ''));
+    const resolved = path.resolve(root, normalized);
+    if (!resolved.startsWith(root)) {
+      errors.push(`${label} asset escapes repository root: ${asset}`);
+      continue;
+    }
+    try {
+      await access(resolved);
+    } catch {
+      errors.push(`${label} asset is missing: ${asset}`);
+    }
+  }
+}
+
+if (errors.length) {
+  for (const error of errors) console.error(error);
+  process.exit(1);
+}
+
+console.log(`service worker ok (${versionMatch[1]}, ${shellAssets.length} static shell assets, ${moduleGraph.length} derived modules, ${offlineDataAssets.length} offline data assets, ${sourceBundleAssets.length} source assets)`);
+
+function parseAssetArray(name) {
+  const match = source.match(new RegExp(`const\\s+${name}\\s*=\\s*\\[([\\s\\S]*?)\\];`));
+  if (!match) return null;
+  return [...match[1].matchAll(/['"](\.\/[^'"]*)['"]/g)].map(assetMatch => assetMatch[1]);
+}
+
+async function deriveModuleGraph(entrypoints, errors) {
+  const graph = new Set();
+  const queue = [...entrypoints];
+  const importPattern = /\bimport(?:\s+(?:(?:[\s\S]*?\sfrom\s+)?['"]([^'"]+)['"])|\s*\(\s*['"]([^'"]+)['"]\s*\))/g;
+  while (queue.length) {
+    const current = queue.shift();
+    if (graph.has(current)) continue;
+    graph.add(current);
+    const filePath = path.join(root, current.replace(/^\.\//, ''));
+    let moduleSource;
+    try {
+      moduleSource = await readFile(filePath, 'utf8');
+    } catch {
+      errors.push(`derived module graph is missing ${current}`);
+      continue;
+    }
+    importPattern.lastIndex = 0;
+    for (const match of moduleSource.matchAll(importPattern)) {
+      const specifier = match[1] || match[2];
+      if (!specifier?.startsWith('.')) continue;
+      const resolved = path.posix.normalize(path.posix.join(
+        path.posix.dirname(current.replace(/^\.\//, '')),
+        specifier,
+      ));
+      if (!resolved.startsWith('src/') || !resolved.endsWith('.js')) continue;
+      const asset = `./${resolved}`;
+      if (!graph.has(asset)) queue.push(asset);
+    }
+  }
+  return [...graph].sort();
+}

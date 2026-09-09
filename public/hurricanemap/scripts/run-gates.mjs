@@ -1,0 +1,277 @@
+// Runs every non-browser release gate and reports all of them.
+//
+// `build` used to be one 84-link `&&` chain, so the first red gate hid the state
+// of every gate after it: a single dependency advisory concealed an expired data
+// snapshot and a broken distribution descriptor for weeks. This runner executes
+// the whole set, prints one line per gate, and exits non-zero if any failed.
+import { spawnSync } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+// The ordered release gate set. Cheap structural checks run first so an obvious
+// break is reported in seconds even though the whole run continues.
+export const GATE_SCRIPTS = Object.freeze([
+  'check:syntax',
+  'check:sw',
+  'check:styles',
+  'check:css-variables',
+  'check:track-contrast',
+  'check:track-ramps',
+  'check:missing-markers',
+  'test:sw-activate',
+  'check:dead-exports',
+  'check:unused-imports',
+  'check:date-locale',
+  'check:untranslated',
+  'check:playwright-timeouts',
+  'test:release-packaging',
+  'check:network-timeouts',
+  'check:readme-links',
+  'check:release-truth',
+  'check:prose-dashes',
+  'check:enso',
+  'test:coverage-claims',
+  'check:licenses',
+  'check:security',
+  'check:pages-size',
+  'check:release-manifest',
+  'check:stac',
+  'check:manifests',
+  'check:baseline',
+  'check:export-provenance',
+  'check:popup-sinks',
+  'check:aria-quicklinks',
+  'validate:data',
+  'test:discovery',
+  'test:dataset-status',
+  'test:snapshot-freshness',
+  'test:coverage',
+  'validate:schemas',
+  'test:stac',
+  'test:category-contract',
+  'test:i18n',
+  'test:manifest-locale',
+  'test:alerts',
+  'test:peak-surge',
+  'test:tides',
+  'test:url-state',
+  'test:filter-state',
+  'test:settings',
+  'test:fuzzy',
+  'test:search-highlight',
+  'test:track-ramps',
+  'test:glossary',
+  'test:climatology',
+  'test:decade-trends',
+  'test:radar',
+  'test:fema',
+  'test:on-this-date',
+  'test:geodesy',
+  'test:network-timeouts',
+  'test:diagnostics',
+  'test:migrations',
+  'test:metric-presenters',
+  'test:shell-boundaries',
+  'test:saved-views',
+  'test:platform-enhancements',
+  'test:search-history',
+  'test:impact-scraper',
+  'test:impact-utils',
+  'test:impact-coverage',
+  'test:report-export',
+  'test:citation',
+  'test:storm-pages',
+  'test:export-provenance',
+  'test:qgis-export',
+  'test:geojson-rfc7946',
+  'test:similarity-vectors',
+  'test:cone-utils',
+  'test:animation',
+  'test:chart',
+  'test:cone-retro',
+  'test:advisory-replay',
+  'test:forecast-skill',
+  'test:art-mode',
+  'test:prep',
+  'test:evac',
+  'test:video-export',
+  'test:timeline',
+  'test:track-timeline',
+  'test:poster',
+  'test:storm-events',
+  'test:globe3d-utils',
+  'test:globe-protocol',
+  'test:exposure-utils',
+  'test:hurdat2-refresh',
+  'test:preprocess-provenance',
+  'test:aoml',
+  'test:notebook',
+  'test:dependency-security',
+  'test:layer-registry',
+  'test:shared-probe',
+  'test:panel-impacts',
+  'test:release-gates',
+  'test:goes-realtime',
+  'test:active-polling',
+  'test:active-products',
+  'test:optional-feeds',
+  'test:optional-feed-ui',
+  'test:wind-context',
+  'test:user-point',
+  'test:storage-manager',
+  'test:bundle-audit',
+  'test:cdn-worker',
+  'test:dockerfile',
+  'test:static-server',
+  'test:distributions',
+]);
+
+// Gates that need a browser, a staged bundle, or an explicit operator choice.
+// `npm test` chains these after this runner; they are deliberately not here.
+export const NON_GATE_SCRIPTS = Object.freeze([
+  'check:security:offline',
+  // Probes the live web, so it cannot sit in an offline gate set. Its snapshot
+  // going stale is what check:release-truth notices.
+  'check:links',
+  'test:distribution-offline',
+  'test:smoke',
+  'test:visual',
+  'test:visual:update',
+  'test:visual-platform',
+  'test:aria',
+  'test:optional-feeds-browser',
+  'test:browser-matrix',
+  'test:offline-smoke',
+  // The same suite with the module registration refused, which is what Firefox
+  // 146 and earlier do. Runs in the browser lane beside its sibling.
+  'test:offline-smoke:classic',
+  'test:globe3d-smoke',
+]);
+
+// A gate nothing runs is not a gate. Anything named like one has to be claimed
+// by GATE_SCRIPTS or excused by NON_GATE_SCRIPTS.
+export function findUnclaimedGates(scripts) {
+  const claimed = new Set([...GATE_SCRIPTS, ...NON_GATE_SCRIPTS]);
+  return Object.keys(scripts)
+    .filter(name => /^(check|validate|test):/.test(name))
+    .filter(name => !claimed.has(name))
+    .sort();
+}
+
+export function findMissingGates(scripts) {
+  return GATE_SCRIPTS.filter(name => !Object.hasOwn(scripts, name));
+}
+
+// The slowest gate is validate:schemas at roughly half a minute; ten minutes
+// is a hang, not a slow machine.
+// A gate can report that it could not run at all, which is not the same as
+// passing. test:notebook is the case that forced this: it returned 0 whenever
+// the notebook packages were absent, so the one check that proves the published
+// notebook still reproduces the release contract was green on every machine
+// that could not run it. Exit code 3 means SKIPPED. A skipped gate is counted
+// and named separately, so a run where something never executed cannot read as
+// a clean full-set pass.
+export const GATE_SKIPPED_EXIT_CODE = 3;
+const GATE_TIMEOUT_MS = 10 * 60 * 1000;
+const MAX_GATE_OUTPUT_BYTES = 32 * 1024 * 1024;
+
+// Three outcomes, not two. Kept separate from the reporting loop so the
+// SKIPPED path is testable without running all 96 gates.
+export function classifyGateResult(result) {
+  if (result?.status === 0) return 'passed';
+  if (result?.status === GATE_SKIPPED_EXIT_CODE) return 'skipped';
+  return 'failed';
+}
+
+export function describeSpawnFailure(result) {
+  if (result?.error?.code === 'ETIMEDOUT' || (result?.signal && result?.status === null && result?.error?.code !== 'ENOBUFS')) {
+    return `killed after ${GATE_TIMEOUT_MS / 1000}s (${result.signal || 'timeout'})`;
+  }
+  if (result?.error?.code === 'ENOBUFS') {
+    return `wrote more than ${MAX_GATE_OUTPUT_BYTES / 1024 / 1024} MB and was cut off; its real exit status is unknown`;
+  }
+  if (result?.error) return result.error.message;
+  return '';
+}
+
+function lastMeaningfulLine(output) {
+  const lines = String(output || '')
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .filter(line => !line.startsWith('>'));
+  return lines[lines.length - 1] || '';
+}
+
+async function main() {
+  const { scripts } = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
+  const missing = findMissingGates(scripts);
+  if (missing.length) {
+    console.error(`release gates: package.json has no script for ${missing.join(', ')}`);
+    process.exit(1);
+  }
+  const unclaimed = findUnclaimedGates(scripts);
+  if (unclaimed.length) {
+    console.error(
+      `release gates: ${unclaimed.join(', ')} looks like a gate but nothing runs it; `
+      + 'add it to GATE_SCRIPTS or list it in NON_GATE_SCRIPTS with a reason',
+    );
+    process.exit(1);
+  }
+
+  const failures = [];
+  const skipped = [];
+  const started = Date.now();
+  for (const [index, name] of GATE_SCRIPTS.entries()) {
+    const position = `${String(index + 1).padStart(2, ' ')}/${GATE_SCRIPTS.length}`;
+    const gateStarted = Date.now();
+    const result = spawnSync(scripts[name], {
+      cwd: root,
+      encoding: 'utf8',
+      shell: true,
+      maxBuffer: MAX_GATE_OUTPUT_BYTES,
+      timeout: GATE_TIMEOUT_MS,
+    });
+    const seconds = ((Date.now() - gateStarted) / 1000).toFixed(1);
+    const outcome = classifyGateResult(result);
+    if (outcome === 'passed') {
+      console.log(`${position} PASS ${name} (${seconds}s) — ${lastMeaningfulLine(result.stdout)}`);
+    } else if (outcome === 'skipped') {
+      skipped.push(name);
+      console.log(`${position} SKIP ${name} (${seconds}s) — ${lastMeaningfulLine(result.stdout)}`);
+    } else {
+      // A gate can die without ever setting an exit status — killed on the
+      // timeout, or cut off for writing more than the buffer holds. Say which,
+      // because the captured output alone reads like an unexplained failure.
+      const reason = describeSpawnFailure(result);
+      failures.push({ name, reason, output: `${result.stdout || ''}${result.stderr || ''}` });
+      console.log(`${position} FAIL ${name} (${seconds}s)${reason ? ` — ${reason}` : ''}`);
+    }
+  }
+
+  const elapsed = ((Date.now() - started) / 1000).toFixed(1);
+  // A skipped gate is not a pass, so it is subtracted from the count and named.
+  // A summary reading 96/96 while one gate never ran is the exact thing this
+  // whole distinction exists to stop.
+  const passed = GATE_SCRIPTS.length - failures.length - skipped.length;
+  const skipNote = skipped.length ? `; ${skipped.length} SKIPPED: ${skipped.join(', ')}` : '';
+  if (failures.length) {
+    for (const failure of failures) {
+      const heading = failure.reason ? `${failure.name} (${failure.reason})` : failure.name;
+      console.error(`\n----- ${heading} -----\n${failure.output.trimEnd()}`);
+    }
+    console.error(
+      `\nrelease gates: ${passed}/${GATE_SCRIPTS.length} passed in ${elapsed}s; `
+      + `failed: ${failures.map(failure => failure.name).join(', ')}${skipNote}`,
+    );
+    process.exit(1);
+  }
+  console.log(`\nrelease gates ok (${passed}/${GATE_SCRIPTS.length} passed in ${elapsed}s${skipNote})`);
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  await main();
+}

@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "reviewed_at_utc": "2026-08-08T00:00:00Z",
+  "vendors": [
+    {
+      "id": "leaflet",
+      "kind": "vendored",
+      "name": "Leaflet",
+      "version": "1.9.4",
+      "files": {
+        "vendor/leaflet.js": "db49d009c841f5ca34a888c96511ae936fd9f5533e90d8b2c4d57596f4e5641a",
+        "vendor/leaflet.css": "337bfca5cabd03b39815b2700febe2b3b7edf55921c59cd49f88ecb328212303",
+        "vendor/leaflet-heat.js": "eb952aae5806a1102729f291bab887dde783ace859819a354827a776e73e486a"
+      },
+      "license": "BSD-2-Clause",
+      "source_url": "https://github.com/Leaflet/Leaflet/tree/v1.9.4",
+      "decision": "disputed-upstream",
+      "reviewed_at_utc": "2026-08-02T00:00:00Z",
+      "advisories": [
+        {
+          "id": "CVE-2025-69993",
+          "severity": "high",
+          "url": "https://security-tracker.debian.org/tracker/CVE-2025-69993",
+          "rationale": "Leaflet maintainers have formally disputed this advisory as documented, intentional behavior. Application-owned popup content is built as DOM nodes, tooltip interpolation is escaped, and the popup sink regression gate rejects string HTML.",
+          "upstream_position_url": "https://github.com/Leaflet/Leaflet/issues/10214",
+          "compensating_control": "check:popup-sinks",
+          "next_action": "Revisit only if Leaflet changes its upstream position or the application adds a new Leaflet content sink."
+        }
+      ]
+    },
+    {
+      "id": "cesium",
+      "kind": "remote-sri",
+      "name": "CesiumJS",
+      "version": "1.145",
+      "assets": {
+        "javascript": {
+          "url": "https://cesium.com/downloads/cesiumjs/releases/1.145/Build/Cesium/Cesium.js",
+          "integrity": "sha384-1G42k2yKVnUMrgZBHAlf+pQXOrpQdoo/lqzpebarn4Wamb2UgdZSZWtWEYfVP3sO"
+        },
+        "stylesheet": {
+          "url": "https://cesium.com/downloads/cesiumjs/releases/1.145/Build/Cesium/Widgets/widgets.css",
+          "integrity": "sha384-ghEeMdcWWzRv/BPeUcX835vcKDGrxvROXisl/Btpv3GeekBUXTSPVcFJpI1Tcrgp"
+        }
+      },
+      "license": "Apache-2.0",
+      "source_url": "https://github.com/CesiumGS/cesium/releases/tag/1.145",
+      "decision": "pinned-sri-isolation",
+      "reviewed_at_utc": "2026-09-05T00:00:00Z",
+      "review_expires_at_utc": "2026-12-31T00:00:00Z",
+      "advisories": [],
+      "rationale": "Cesium is optional, loaded only in the opaque sandboxed globe document, and both remote assets use exact SRI hashes.",
+      "next_action": "Review the pinned Cesium release and SRI pair before 2026-12-31 or before changing the isolated globe boundary."
+    }
+  ]
+}

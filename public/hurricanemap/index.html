@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#11111b" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://tile.openstreetmap.org https://*.tile.openstreetmap.org https://tiles.arcgis.com https://cdn.star.nesdis.noaa.gov https://mesonet.agron.iastate.edu https://pae-paha.pacioos.hawaii.edu; connect-src 'self' https://api.weather.gov https://api.tidesandcurrents.noaa.gov https://mapservices.weather.noaa.gov https://pae-paha.pacioos.hawaii.edu https://tile.openstreetmap.org https://*.tile.openstreetmap.org https://tiles.arcgis.com https://services9.arcgis.com https://services.arcgis.com https://geocode.arcgis.com https://cdn.star.nesdis.noaa.gov https://mesonet.agron.iastate.edu https://www.nhc.noaa.gov https://www.fema.gov; font-src 'self'; worker-src 'self' blob:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none';" />
+  <meta name="description" content="HurricaneMap: an interactive map of every U.S. hurricane landfall on record (1851-present), built from NOAA's HURDAT2 best-track database." />
+  <meta property="og:title" content="HurricaneMap: 174 Years of U.S. Hurricane Landfalls" />
+  <meta property="og:description" content="Interactive map of 595 storms and 759 landfall events drawn from NOAA's HURDAT2 database (1851-2025). Track animation, archived NEXRAD radar, storm comparison, and publication-ready exports." />
+  <meta property="og:image" content="https://sysadmindoc.github.io/HurricaneMap/example.png" />
+  <meta property="og:url" content="https://sysadmindoc.github.io/HurricaneMap/" />
+  <meta property="og:type" content="website" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="HurricaneMap: 174 Years of U.S. Hurricane Landfalls" />
+  <meta name="twitter:description" content="Interactive map of every recorded U.S. hurricane landfall (1851-2025) from NOAA HURDAT2." />
+  <meta name="twitter:image" content="https://sysadmindoc.github.io/HurricaneMap/example.png" />
+  <title>HurricaneMap: 174 Years of U.S. Hurricane Landfalls</title>
+  <link rel="canonical" href="https://sysadmindoc.github.io/HurricaneMap/" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="alternate" type="application/json" title="HurricaneMap STAC catalog" href="data/stac/catalog.json" />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org/",
+    "@type": "Dataset",
+    "name": "HurricaneMap: U.S. tropical cyclone landfalls, 1851-2025",
+    "alternateName": "HurricaneMap",
+    "description": "Every recorded U.S. hurricane and tropical-storm landfall derived from NOAA HURDAT2 Atlantic and Eastern North Pacific best-track data. 595 landfalling storms, 759 landfall events, 374 at hurricane strength, with per-storm tracks, intensity, archived NEXRAD radar, and publication-ready exports.",
+    "url": "https://sysadmindoc.github.io/HurricaneMap/",
+    "sameAs": "https://github.com/SysAdminDoc/HurricaneMap",
+    "license": "https://opensource.org/licenses/MIT",
+    "keywords": ["hurricane", "tropical cyclone", "landfall", "HURDAT2", "NOAA", "United States", "storm track"],
+    "temporalCoverage": "1851/2025",
+    "spatialCoverage": { "@type": "Place", "name": "United States, including Puerto Rico, the U.S. Virgin Islands and Hawaii" },
+    "creator": { "@type": "Organization", "name": "SysAdminDoc", "url": "https://github.com/SysAdminDoc" },
+    "isBasedOn": {
+      "@type": "Dataset",
+      "name": "NOAA HURDAT2 Atlantic hurricane database",
+      "url": "https://www.nhc.noaa.gov/data/hurdat/hurdat2-1851-2025-02272026.txt",
+      "datePublished": "2026-02-27",
+      "creator": { "@type": "Organization", "name": "NOAA National Hurricane Center" }
+    },
+    "citation": "Landsea, C. W., and J. L. Franklin, 2013: Atlantic Hurricane Database Uncertainty and Presentation of a New Database Format. Mon. Wea. Rev., 141, 3576-3592.",
+    "distribution": [
+      { "@type": "DataDownload", "encodingFormat": "application/json", "contentUrl": "https://sysadmindoc.github.io/HurricaneMap/data/landfalls.json", "name": "Landfall events" },
+      { "@type": "DataDownload", "encodingFormat": "application/json", "contentUrl": "https://sysadmindoc.github.io/HurricaneMap/data/storms.json", "name": "Storm tracks" },
+      { "@type": "DataDownload", "encodingFormat": "application/json", "contentUrl": "https://sysadmindoc.github.io/HurricaneMap/data/stac/catalog.json", "name": "STAC 1.1.0 catalog" }
+    ]
+  }
+  </script>
+  <link rel="icon" type="image/png" sizes="192x192" href="branding/logo-192.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="branding/apple-touch-icon.png" />
+  <link rel="stylesheet" href="vendor/leaflet.css" />
+  <link rel="stylesheet" href="src/styles.css" />
+  <link rel="preload" as="style" href="src/styles-tokens.css" />
+  <link rel="preload" as="style" href="src/styles-reset.css" />
+  <link rel="preload" as="style" href="src/styles-base.css" />
+  <link rel="preload" as="style" href="src/styles-shell.css" />
+  <link rel="preload" as="style" href="src/styles-components.css" />
+  <link rel="preload" as="style" href="src/styles-utilities.css" />
+  <link rel="preload" as="style" href="src/styles-themes.css" />
+  <link rel="preload" as="style" href="src/styles-accessibility.css" />
+  <link rel="preload" as="font" type="font/woff2" href="fonts/inter-latin.woff2" crossorigin />
+  <link rel="preload" as="font" type="font/woff2" href="fonts/jetbrains-mono-latin.woff2" crossorigin />
+  <link rel="modulepreload" href="src/main.js" fetchpriority="high" />
+  <link rel="modulepreload" href="src/data.js" fetchpriority="high" />
+  <link rel="modulepreload" href="src/map.js" fetchpriority="high" />
+  <link rel="modulepreload" href="src/settings.js" fetchpriority="high" />
+  <link rel="modulepreload" href="src/i18n.js" fetchpriority="high" />
+  <!-- The English catalog is a static import of i18n.js, so without this the
+       browser cannot start fetching it until i18n.js has arrived and parsed.
+       Spanish and Creole are deliberately absent: they load on demand. -->
+  <link rel="modulepreload" href="src/locales/en.js" fetchpriority="high" />
+  <link rel="modulepreload" href="src/timeline.js" />
+  <link rel="modulepreload" href="src/season.js" />
+  <link rel="modulepreload" href="src/search-history.js" />
+  <link rel="modulepreload" href="src/perf.js" />
+  <link rel="modulepreload" href="src/sw-updates.js" />
+  <link rel="modulepreload" href="src/html-utils.js" />
+  <link rel="modulepreload" href="src/track-ramps.js" />
+  <link rel="modulepreload" href="src/url-state.js" />
+  <link rel="modulepreload" href="src/citation-ui.js" />
+  <link rel="modulepreload" href="src/filter-state.js" />
+  <link rel="modulepreload" href="src/errors.js" />
+  <link rel="modulepreload" href="src/tooltips.js" />
+  <link rel="modulepreload" href="src/optional-feeds.js" />
+  <link rel="modulepreload" href="src/storage-manager.js" />
+  <link rel="modulepreload" href="src/diagnostics.js" />
+  <link rel="modulepreload" href="src/filter-controller.js" />
+  <link rel="modulepreload" href="src/shell-ui.js" />
+  <link rel="modulepreload" href="src/saved-views-ui.js" />
+  <link rel="modulepreload" href="src/user-point.js" />
+  <link rel="modulepreload" href="src/manifest-locale.js" />
+</head>
+<body>
+  <noscript>
+    <div class="noscript-notice">
+      <h1>CycloneMap</h1>
+      <p>
+        An interactive atlas of every recorded U.S. hurricane and tropical-storm landfall from 1851 to 2025,
+        built from NOAA's HURDAT2 best-track database (revision of 27 February 2026). It covers 595 landfalling
+        storms and 759 landfall events, 374 of them at hurricane strength.
+      </p>
+      <p>The map itself needs JavaScript, but the underlying data does not. You can read it directly:</p>
+      <ul>
+        <li><a href="storms/">Every storm, one page each</a>: track table, landfalls and a citation, no JavaScript required</li>
+        <li><a href="data/landfalls.json">landfalls.json</a>: one record per landfall event</li>
+        <li><a href="data/storms.json">storms.json</a>: full six-hourly tracks per storm</li>
+        <li><a href="data/stats.json">stats.json</a>: totals by state, decade and category</li>
+        <li><a href="data/metadata.json">metadata.json</a>: source files, revision dates and checksums</li>
+        <li><a href="data/stac/catalog.json">STAC 1.1.0 catalog</a>: machine-readable dataset discovery</li>
+        <li><a href="https://github.com/SysAdminDoc/HurricaneMap">Source code and documentation on GitHub</a></li>
+      </ul>
+      <p>
+        Cite the underlying database as Landsea, C. W., and J. L. Franklin, 2013: Atlantic Hurricane Database
+        Uncertainty and Presentation of a New Database Format. <em>Mon. Wea. Rev.</em>, 141, 3576-3592.
+      </p>
+    </div>
+  </noscript>
+  <a href="#main" class="skip-to-content" data-i18n="app.skipToMap">Skip to map</a>
+  <header class="app-header glass">
+    <img class="brand-mark" src="branding/favicon.png" alt="" aria-hidden="true" />
+    <div class="title-block">
+      <h1 data-i18n="header.title">CycloneMap</h1>
+      <p class="subtitle"><span data-i18n="header.subtitle">174 years of U.S. landfalls</span></p>
+    </div>
+    <div class="header-actions" aria-label="View controls" data-i18n-aria-label="app.viewControls" tabindex="0" aria-keyshortcuts="ArrowLeft ArrowRight Home End">
+      <button class="icon-btn" id="toggle-filters" title="Filters" aria-label="Filters" data-i18n-title="header.btn.filters" data-i18n-aria-label="header.btn.filters" aria-controls="filters" aria-expanded="true">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M3 5a1 1 0 0 1 1-1h16a1 1 0 0 1 .78 1.63L15 12.85V19a1 1 0 0 1-1.45.89l-4-2A1 1 0 0 1 9 17v-4.15L3.22 5.63A1 1 0 0 1 3 5zm3.08 1L10.78 11A1 1 0 0 1 11 11.68v4.7l2 1v-5.7a1 1 0 0 1 .22-.63L17.92 6H6.08z"/></svg>
+        <span class="header-action-label" data-i18n="header.btn.filters">Filters</span>
+      </button>
+      <button class="icon-btn" id="toggle-stats" title="Statistics" aria-label="Statistics" data-i18n-title="header.btn.stats" data-i18n-aria-label="header.btn.stats" aria-pressed="false">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M3 13h2v8H3v-8zm4-4h2v12H7V9zm4 6h2v6h-2v-6zm4-10h2v16h-2V5zm4 4h2v12h-2V9z"/></svg>
+        <span class="header-action-label" data-i18n="header.btn.stats">Statistics</span>
+      </button>
+      <button class="icon-btn" id="toggle-on-this-date" title="This Date" aria-label="This Date" data-i18n-title="header.btn.onthisdate" data-i18n-aria-label="header.btn.onthisdate" aria-pressed="false">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M19 3h-1V1h-2v2H8V1H6v2H5a3 3 0 0 0-3 3v14a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3V6a3 3 0 0 0-3-3zm0 17H5V9h14v11zm-7-10h-2v5h5v-2h-3z"/></svg>
+        <span class="header-action-label" data-i18n="header.btn.onthisdate">This Date</span>
+      </button>
+      <button class="icon-btn" id="toggle-compare" title="Compare" aria-label="Compare" data-i18n-title="header.btn.compare" data-i18n-aria-label="header.btn.compare" aria-pressed="false">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M9.4 16.6 4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4zm5.2 0L19.2 12l-4.6-4.6L16 6l6 6-6 6-1.4-1.4z"/></svg>
+        <span class="header-action-label" data-i18n="header.btn.compare">Compare</span>
+      </button>
+      <button class="icon-btn" id="toggle-globe3d" title="3D storm globe" aria-label="3D storm globe" data-i18n-title="header.btn.globe" data-i18n-aria-label="header.btn.globe" aria-pressed="false" aria-controls="globe3d-panel">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm6.93 6h-3.12a15.62 15.62 0 0 0-1.07-3.08A8.05 8.05 0 0 1 18.93 8zM12 4.04c.55.8 1.25 2.12 1.68 3.96h-3.36C10.75 6.16 11.45 4.84 12 4.04zM4.26 14a8.34 8.34 0 0 1 0-4h3.52A17.12 17.12 0 0 0 7.66 12c0 .68.04 1.35.12 2H4.26zm.81 2h3.12c.25 1.2.62 2.25 1.07 3.08A8.05 8.05 0 0 1 5.07 16zm3.12-8H5.07a8.05 8.05 0 0 1 4.19-3.08A15.62 15.62 0 0 0 8.19 8zM12 19.96c-.55-.8-1.25-2.12-1.68-3.96h3.36c-.43 1.84-1.13 3.16-1.68 3.96zM14.09 14H9.91A14.73 14.73 0 0 1 9.76 12c0-.72.05-1.39.15-2h4.18c.1.61.15 1.28.15 2s-.05 1.39-.15 2zm.65 5.08c.45-.83.82-1.88 1.07-3.08h3.12a8.05 8.05 0 0 1-4.19 3.08zM16.22 14c.08-.65.12-1.32.12-2s-.04-1.35-.12-2h3.52a8.34 8.34 0 0 1 0 4h-3.52z"/></svg>
+        <span class="header-action-label" data-i18n="header.btn.globe">3D Globe</span>
+      </button>
+      <button class="icon-btn" id="toggle-info" title="About" aria-label="About" data-i18n-title="header.btn.info" data-i18n-aria-label="header.btn.info">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M11 17h2v-6h-2v6zm1-15A10 10 0 1 0 22 12 10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8zm-1-11h2V7h-2v2z"/></svg>
+        <span class="header-action-label" data-i18n="header.btn.info">About</span>
+      </button>
+      <button class="icon-btn" id="toggle-glossary" title="Glossary" aria-label="Glossary" data-i18n-title="header.btn.glossary" data-i18n-aria-label="header.btn.glossary">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M21 5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5zm-2 0H5v2h14V5zm0 14H5v-10h14v10z"/></svg>
+        <span class="header-action-label" data-i18n="header.btn.glossary">Glossary</span>
+      </button>
+      <button class="icon-btn" id="toggle-settings" title="Settings" aria-label="Settings" data-i18n-title="header.btn.settings" data-i18n-aria-label="header.btn.settings" aria-expanded="false" aria-controls="settings-menu" popovertarget="settings-menu">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M19.14 12.94a7.49 7.49 0 0 0 .05-.94 7.49 7.49 0 0 0-.05-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.03 7.03 0 0 0-1.62-.94l-.36-2.54A.5.5 0 0 0 13.9 2h-3.84a.5.5 0 0 0-.5.42l-.36 2.54a7.03 7.03 0 0 0-1.62.94l-2.39-.96a.5.5 0 0 0-.6.22L2.67 8.48a.5.5 0 0 0 .12.64l2.03 1.58a7.49 7.49 0 0 0 0 1.88l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.5.38 1.04.7 1.62.94l.36 2.54a.5.5 0 0 0 .5.42h3.84a.5.5 0 0 0 .5-.42l.36-2.54a7.03 7.03 0 0 0 1.62-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58zM12 15.5A3.5 3.5 0 1 1 15.5 12 3.5 3.5 0 0 1 12 15.5z"/></svg>
+        <span class="header-action-label" data-i18n="header.btn.settings">Settings</span>
+      </button>
+      <button class="icon-btn mobile-more-btn" id="toggle-mobile-actions" title="More actions" aria-label="More actions" data-i18n-title="header.btn.more" data-i18n-aria-label="header.btn.more" aria-expanded="false" aria-controls="mobile-actions-menu">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M5 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm7 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm7 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>
+        <span class="header-action-label" data-i18n="header.btn.more">More</span>
+      </button>
+      <div class="mobile-actions-menu" id="mobile-actions-menu" aria-label="Secondary actions" data-i18n-aria-label="app.secondaryActions" data-open="false">
+        <button class="icon-btn" id="export-publication" title="Export filtered CSV" aria-label="Export filtered CSV" data-i18n-title="header.btn.export" data-i18n-aria-label="header.btn.export">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-8-6zm4 18H6V4h7v5h5v11z"/></svg>
+          <span class="mobile-action-label" data-i18n="header.btn.export">Export filtered CSV</span>
+        </button>
+        <button class="icon-btn" id="generate-report" title="Summary report" aria-label="Summary report" data-i18n-title="header.btn.report" data-i18n-aria-label="header.btn.report">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+          <span class="mobile-action-label" data-i18n="header.btn.report">Summary report</span>
+        </button>
+        <button class="icon-btn" id="toggle-poster" title="Track gallery poster" aria-label="Track gallery poster" data-i18n-title="header.btn.poster" data-i18n-aria-label="header.btn.poster" aria-controls="poster-view">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M3 3h18v18H3V3zm2 2v11.2l3.8-4.6 2.7 3.2 2.2-2.6L19 18.4V5H5zm10.5 2A2.5 2.5 0 1 0 18 9.5 2.5 2.5 0 0 0 15.5 7z"/></svg>
+          <span class="mobile-action-label" data-i18n="header.btn.poster">Track gallery poster</span>
+        </button>
+        <button class="icon-btn" id="export-qgis" title="QGIS GeoJSON" aria-label="QGIS GeoJSON" data-i18n-title="header.btn.qgis" data-i18n-aria-label="header.btn.qgis">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M19 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm0 16H5V5h14v14zm-5.04-6.71l-2.75 3.54-1.3-1.54-4 5h12L13.96 12.29z"/></svg>
+          <span class="mobile-action-label" data-i18n="header.btn.qgis">QGIS GeoJSON</span>
+        </button>
+        <button class="icon-btn" id="toggle-table-view" title="Landfall table" aria-label="Landfall table" data-i18n-title="header.btn.table" data-i18n-aria-label="header.btn.table">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M3 3h18v18H3V3zm2 2v4h6V5H5zm8 0v4h6V5h-6zM5 11v4h6v-4H5zm8 0v4h6v-4h-6zM5 17v2h6v-2H5zm8 0v2h6v-2h-6z"/></svg>
+          <span class="mobile-action-label" data-i18n="header.btn.table">Landfall table</span>
+        </button>
+        <button class="icon-btn" id="toggle-spatial-search" title="Nearby storms" aria-label="Nearby storms" data-i18n-title="header.btn.spatial" data-i18n-aria-label="header.btn.spatial" aria-pressed="false">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 0 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg>
+          <span class="mobile-action-label" data-i18n="header.btn.spatial">Nearby storms</span>
+        </button>
+        <button class="icon-btn" id="toggle-evac" title="Evacuation zones" aria-label="Evacuation zones" data-i18n-title="header.btn.evac" data-i18n-aria-label="header.btn.evac" aria-pressed="false" aria-controls="evac-panel">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7zm0 10.5A3.5 3.5 0 1 1 12 5a3.5 3.5 0 0 1 0 7.5zm-1-5h2v3h-2v-3zm0 4h2v2h-2v-2z"/></svg>
+          <span class="mobile-action-label" data-i18n="header.btn.evac">Evacuation zones</span>
+        </button>
+        <button class="icon-btn" id="toggle-prep" title="Hurricane preparedness" aria-label="Hurricane preparedness" data-i18n-title="header.btn.prep" data-i18n-aria-label="header.btn.prep" aria-pressed="false" aria-controls="prep-panel">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M9 3h6a2 2 0 0 1 2 2v2h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h2V5a2 2 0 0 1 2-2zm0 4h6V5H9v2zm2 3v3H8v2h3v3h2v-3h3v-2h-3v-3h-2z"/></svg>
+          <span class="mobile-action-label" data-i18n="header.btn.prep">Preparedness</span>
+        </button>
+      </div>
+    </div>
+    <div class="settings-menu glass" id="settings-menu" role="dialog" aria-labelledby="settings-menu-title" aria-describedby="settings-menu-description" popover>
+      <div class="settings-menu-header">
+        <h2 id="settings-menu-title" data-i18n="settings.title">Display settings</h2>
+        <p id="settings-menu-description" data-i18n="settings.description">Tune units, accessibility, and live-storm layers. Changes stay on this device.</p>
+      </div>
+      <section class="settings-section" aria-labelledby="settings-reading-title">
+        <h3 id="settings-reading-title" data-i18n="settings.reading">Reading</h3>
+        <div class="settings-row">
+          <div class="settings-label-stack">
+            <div class="settings-label" data-i18n="settings.windUnits">Wind units</div>
+            <p class="settings-help" data-i18n="settings.windHelp">Used in panels, charts, and exports.</p>
+          </div>
+          <div class="settings-pillgroup" role="radiogroup" aria-label="Wind unit" data-i18n-aria-label="settings.windGroup">
+            <button class="settings-pill" data-set-unit="kt" role="radio" data-i18n="settings.knots">Knots</button>
+            <button class="settings-pill" data-set-unit="mph" role="radio">mph</button>
+            <button class="settings-pill" data-set-unit="kmh" role="radio">km/h</button>
+          </div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-label-stack">
+            <div class="settings-label" data-i18n="settings.damageMode">Damage figures</div>
+            <p class="settings-help" data-i18n="settings.damageHelp">Compare historical losses either as reported or CPI-adjusted.</p>
+          </div>
+          <div class="settings-pillgroup" role="radiogroup" aria-label="Damage adjustment" data-i18n-aria-label="settings.damageGroup">
+            <button class="settings-pill" data-set-damage="nominal" role="radio" title="Nominal USD at year-of-storm" data-i18n="settings.damageModeNominal">Nominal</button>
+            <button class="settings-pill" data-set-damage="real" role="radio" title="CPI-adjusted to 2024 USD using BLS annual averages" data-i18n="settings.damageMode2024">2024 USD</button>
+          </div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-label-stack">
+            <div class="settings-label" data-i18n="settings.language">Language</div>
+            <p class="settings-help" data-i18n="settings.languageHelp">Updates interface labels without changing data.</p>
+          </div>
+          <div class="settings-pillgroup" role="radiogroup" aria-label="Language" data-i18n-aria-label="settings.languageGroup">
+            <button class="settings-pill" data-set-locale="en" role="radio">English</button>
+            <button class="settings-pill" data-set-locale="es" role="radio">Español</button>
+            <button class="settings-pill" data-set-locale="ht" role="radio">Kreyòl</button>
+          </div>
+        </div>
+      </section>
+      <section class="settings-section" aria-labelledby="settings-appearance-title">
+        <h3 id="settings-appearance-title" data-i18n="settings.appearance">Appearance</h3>
+        <div class="settings-row">
+          <div class="settings-label-stack">
+            <div class="settings-label" data-i18n="settings.theme">Theme</div>
+            <p class="settings-help" data-i18n="settings.themeHelp">Choose the map chrome that fits your lighting.</p>
+          </div>
+          <div class="settings-pillgroup" role="radiogroup" aria-label="Theme" data-i18n-aria-label="settings.themeGroup">
+            <button class="settings-pill" data-set-theme="dark" role="radio" title="Dark theme (Catppuccin Mocha)" data-i18n="settings.themeDark">Dark</button>
+            <button class="settings-pill" data-set-theme="light" role="radio" title="Light theme (Catppuccin Latte)" data-i18n="settings.themeLight">Light</button>
+            <button class="settings-pill" data-set-theme="system" role="radio" title="Follow your operating system color scheme" data-i18n="settings.themeSystem">System</button>
+          </div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-label-stack">
+            <div class="settings-label" data-i18n="settings.palette">Color palette</div>
+            <p class="settings-help" data-i18n="settings.paletteHelp">Keeps category color meaning consistent across the map and panels.</p>
+          </div>
+          <div class="settings-pillgroup" role="radiogroup" aria-label="Color palette" data-i18n-aria-label="settings.paletteGroup">
+            <button class="settings-pill" data-set-palette="default" role="radio" data-i18n="settings.paletteDefault">Default</button>
+            <button class="settings-pill" data-set-palette="colorblind" role="radio" title="ColorBrewer YlOrRd: sequential and distinguishable for common color-vision differences" data-i18n="settings.paletteColorblind">Colorblind</button>
+          </div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-label-stack">
+            <div class="settings-label" data-i18n="settings.trackColorGroup">Track colour</div>
+            <p class="settings-help" data-i18n="settings.trackColorHelp">Recolours storm tracks by the variable you pick, with a matching legend.</p>
+          </div>
+          <div class="settings-pillgroup" role="radiogroup" aria-label="Track colour" data-i18n-aria-label="settings.trackColorGroup">
+            <button class="settings-pill" data-set-track-color="category" role="radio" data-i18n="settings.trackColorCategory">Category</button>
+            <button class="settings-pill" data-set-track-color="wind" role="radio" data-i18n="settings.trackColorWind">Wind</button>
+            <button class="settings-pill" data-set-track-color="pressure" role="radio" data-i18n="settings.trackColorPressure">Pressure</button>
+            <button class="settings-pill" data-set-track-color="month" role="radio" data-i18n="settings.trackColorMonth">Month</button>
+          </div>
+        </div>
+        <div class="settings-row">
+          <label class="toggle-row">
+            <input type="checkbox" id="toggle-high-contrast" />
+            <span class="settings-toggle-copy"><span data-i18n="settings.highContrast">High-contrast mode</span><small data-i18n="settings.highContrastHelp">Strengthens text, borders, and focus outlines.</small></span>
+          </label>
+        </div>
+        <div class="settings-row">
+          <label class="toggle-row">
+            <input type="checkbox" id="toggle-reduced-motion" />
+            <span class="settings-toggle-copy"><span data-i18n="settings.reduceMotion">Reduce motion</span><small data-i18n="settings.reduceMotionHelp">Keeps state changes clear with less animation.</small></span>
+          </label>
+        </div>
+      </section>
+      <section class="settings-section" aria-labelledby="settings-assist-title">
+        <h3 id="settings-assist-title" data-i18n="settings.liveAids">Live storm aids</h3>
+        <div class="settings-row">
+          <label class="toggle-row">
+            <input type="checkbox" id="toggle-nhc-forecast-cone" />
+            <span class="settings-toggle-copy"><span data-i18n="settings.nhcCone">NHC forecast cone and track</span><small data-i18n="settings.nhcConeHelp">Appears only when official active-storm geometry is available.</small></span>
+          </label>
+        </div>
+        <div class="settings-row">
+          <label class="toggle-row">
+            <input type="checkbox" id="toggle-nhc-outlook" />
+            <span class="settings-toggle-copy"><span data-i18n="settings.nhcOutlook">NHC tropical outlook</span><small data-i18n="settings.nhcOutlookHelp">Shows current official disturbance areas and formation chances.</small></span>
+          </label>
+        </div>
+        <div class="settings-row">
+          <label class="toggle-row">
+            <input type="checkbox" id="toggle-marine-warnings" />
+            <span class="settings-toggle-copy"><span data-i18n="settings.marineWarnings">Marine wind-warning outlook</span><small data-i18n="settings.marineWarningsHelp">Shows NHC offshore wind-warning risk zones for one forecast band.</small></span>
+          </label>
+          <div class="settings-pillgroup" role="radiogroup" aria-label="Marine forecast band" data-i18n-aria-label="settings.marineHorizonGroup">
+            <button class="settings-pill" data-set-marine-horizon="00to24" role="radio" data-i18n="settings.marineHorizon00to24">0–24 h</button>
+            <button class="settings-pill" data-set-marine-horizon="24to48" role="radio" data-i18n="settings.marineHorizon24to48">24–48 h</button>
+          </div>
+        </div>
+        <div class="settings-row">
+          <label class="toggle-row">
+            <input type="checkbox" id="toggle-goes-realtime" />
+            <span class="settings-toggle-copy"><span data-i18n="settings.goesLayer">GOES satellite backdrop</span><small data-i18n="settings.goesLayerHelp">Adds live imagery behind active storms when tiles are reachable.</small></span>
+          </label>
+        </div>
+        <div class="settings-row settings-row--action">
+          <button class="settings-action" id="replay-tour" type="button" data-i18n="settings.replayTour">Replay welcome tour</button>
+        </div>
+      </section>
+      <section class="settings-section" aria-labelledby="settings-feed-title">
+        <h3 id="settings-feed-title" data-i18n="feeds.title">Optional data diagnostics</h3>
+        <p class="settings-help" data-i18n="feeds.description">Live and on-demand source health. Failed refreshes retain labeled last-good data when available.</p>
+        <div id="optional-feed-diagnostics" class="feed-diagnostics" role="list"></div>
+      </section>
+      <section class="settings-section" aria-labelledby="settings-storage-title">
+        <h3 id="settings-storage-title" data-i18n="storage.title">Offline storage</h3>
+        <p class="settings-help" data-i18n="storage.description">Core historical data is protected. Map tiles and opt-in radar packs can be cleared independently.</p>
+        <div id="storage-manager" class="storage-manager"></div>
+      </section>
+      <section class="settings-section" aria-labelledby="settings-diagnostics-title">
+        <h3 id="settings-diagnostics-title" data-i18n="diagnostics.title">Offline diagnostics</h3>
+        <p class="settings-help" data-i18n="diagnostics.description">Service worker, cache, storage, and source readiness for troubleshooting offline use.</p>
+        <div id="offline-diagnostics" class="offline-diagnostics"></div>
+      </section>
+      <section class="settings-section" aria-labelledby="settings-saved-views-title">
+        <h3 id="settings-saved-views-title" data-i18n="savedViews.title">Saved views</h3>
+        <p class="settings-help" data-i18n="savedViews.privacy">Saved views never include addresses or selected locations. Device location stays session-only unless you explicitly remember it for 24 hours.</p>
+        <div id="saved-views-manager"></div>
+      </section>
+      <div class="settings-meta" data-i18n="settings.meta">Saved on this device. No account, tracking profile, or cloud sync.</div>
+    </div>
+    <div class="header-tooltip" id="header-tooltip" role="tooltip" popover="hint"></div>
+  </header>
+
+  <main id="main" tabindex="-1">
+  <div id="map" aria-label="Hurricane landfall map" data-i18n-aria-label="app.mapLabel" tabindex="-1"></div>
+  <div id="map-announce" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
+
+  <section class="atlas-context-rail glass" aria-label="Dataset context" data-i18n-aria-label="atlas.context">
+    <span class="atlas-context-state"><span class="atlas-live-dot" aria-hidden="true"></span><span data-i18n="atlas.historical">Historical atlas</span></span>
+    <span class="atlas-context-divider" aria-hidden="true"></span>
+    <span data-i18n="atlas.scope">U.S. landfalls</span>
+    <span>1851–2025</span>
+    <span class="atlas-context-count" id="storm-count">…</span>
+    <span class="atlas-context-source">NOAA HURDAT2</span>
+  </section>
+
+  <aside class="filters glass" id="filters" role="region" aria-label="Storm filters and search" data-i18n-aria-label="filters.region">
+    <h2 class="sr-only" data-i18n="filters.title">Filters</h2>
+    <div class="filter-row filter-row--year">
+      <label for="year-min" data-i18n="filters.yearRange">Year range</label>
+      <div class="year-inputs">
+        <input type="number" id="year-min" min="1851" max="2025" value="1851" aria-label="Earliest year" data-i18n-aria-label="filters.earliestYear" />
+        <span>—</span>
+        <input type="number" id="year-max" min="1851" max="2025" value="2025" aria-label="Latest year" data-i18n-aria-label="filters.latestYear" />
+        <button id="clear-year-filter" class="text-btn year-clear-btn" title="Reset year range" aria-label="Reset year range" data-i18n-title="filters.resetYear" data-i18n-aria-label="filters.resetYear" data-i18n="btn.clearYearFilter">Reset</button>
+      </div>
+    </div>
+    <div class="filter-row filter-row--cats">
+      <label>
+        <span data-i18n="filters.category">Category</span>
+        <div class="cat-toggles" role="group" aria-label="Category" data-i18n-aria-label="filters.category">
+          <button data-cat="ts" class="cat-btn cat-ts on" title="Tropical Storm" aria-label="Tropical Storm" data-i18n-title="category.ts" data-i18n-aria-label="category.ts">TS</button>
+          <button data-cat="1" class="cat-btn cat-1 on" aria-label="Category 1" data-i18n-aria-label="category.1">1</button>
+          <button data-cat="2" class="cat-btn cat-2 on" aria-label="Category 2" data-i18n-aria-label="category.2">2</button>
+          <button data-cat="3" class="cat-btn cat-3 on" aria-label="Category 3" data-i18n-aria-label="category.3">3</button>
+          <button data-cat="4" class="cat-btn cat-4 on" aria-label="Category 4" data-i18n-aria-label="category.4">4</button>
+          <button data-cat="5" class="cat-btn cat-5 on" aria-label="Category 5" data-i18n-aria-label="category.5">5</button>
+        </div>
+      </label>
+    </div>
+    <div class="filter-row">
+      <label for="state-filter" data-i18n="filters.state">State</label>
+      <select id="state-filter">
+        <option value="" data-i18n="filters.allStates">All states</option>
+      </select>
+    </div>
+    <div class="filter-row">
+      <label for="search-input" data-i18n="filters.searchStorm">Search storm</label>
+      <input type="search" id="search-input" placeholder="Search name, year, or state" data-i18n-placeholder="filters.searchPlaceholder" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="search-results" />
+      <ul id="search-results" class="search-results" role="listbox" aria-label="Storm search results" data-i18n-aria-label="filters.searchResults" hidden></ul>
+    </div>
+    <label class="toggle-row retired-toggle" title="Show only retired storm names" data-i18n-title="filters.retiredHelp">
+      <input type="checkbox" id="show-retired-only" />
+      <span data-i18n="filters.retiredOnly">Retired names only</span>
+    </label>
+    <div class="filter-group" aria-label="Map layers" data-i18n-aria-label="filters.mapLayers">
+      <div class="filter-group-label" data-i18n="filters.mapLayers">Map layers</div>
+      <div class="filter-layer-grid">
+        <label class="toggle-row">
+          <input type="checkbox" id="show-tracks" />
+          <span data-i18n="filters.tracksForVisibleLandfalls">Tracks for visible landfalls</span>
+        </label>
+        <label class="toggle-row">
+          <input type="checkbox" id="show-heatmap" />
+          <span data-i18n="filters.heatmap">Landfall heatmap</span>
+        </label>
+        <label class="toggle-row">
+          <input type="checkbox" id="show-population" />
+          <span data-i18n="filters.population">Population density</span>
+        </label>
+        <div id="population-feed-status" class="optional-feed-status-host"></div>
+        <label class="toggle-row" title="NOAA satellite sea-surface temperature snapshot" data-i18n-title="filters.sstHelp">
+          <input type="checkbox" id="show-sst" />
+          <span data-i18n="filters.sst">Sea surface temp (latest)</span>
+        </label>
+        <div class="layer-select">
+          <label for="surge-category" class="layer-select-label" data-i18n="filters.stormSurge">Storm surge</label>
+          <select id="surge-category">
+            <option value="" data-i18n="filters.surgeOff">Off</option>
+            <option value="1">Cat 1</option>
+            <option value="2">Cat 2</option>
+            <option value="3">Cat 3</option>
+            <option value="4">Cat 4</option>
+            <option value="5">Cat 5</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="filter-row filter-footer">
+      <button id="reset-filters" class="text-btn" data-i18n="filters.resetFilters">Reset filters</button>
+      <span class="visible-count" id="visible-count" role="status" aria-live="polite"></span>
+    </div>
+    <div class="filter-legend" aria-label="Saffir-Simpson at landfall" data-i18n-aria-label="filters.legendTitle">
+      <h2 class="legend-heading" data-i18n="filters.legendTitle">Saffir-Simpson at landfall</h2>
+      <ul class="filter-legend-list">
+        <li><span class="dot cat-ts" title="Solid border = tropical storm" data-i18n-title="filters.legendTsBorder"></span><span>TS · 34-63 kt</span></li>
+        <li><span class="dot cat-1 dot-dashed" title="Dashed border = Cat 1-2" data-i18n-title="filters.legend12Border"></span><span>1 · 64-82 kt</span></li>
+        <li><span class="dot cat-2 dot-dashed" title="Dashed border = Cat 1-2" data-i18n-title="filters.legend12Border"></span><span>2 · 83-95 kt</span></li>
+        <li><span class="dot cat-3 dot-dotted" title="Dotted border = Cat 3-4 major" data-i18n-title="filters.legend34Border"></span><span>3 · 96-112 kt</span></li>
+        <li><span class="dot cat-4 dot-dotted" title="Dotted border = Cat 3-4 major" data-i18n-title="filters.legend34Border"></span><span>4 · 113-136 kt</span></li>
+        <li><span class="dot cat-5 dot-mixed" title="Mixed dash = Cat 5" data-i18n-title="filters.legend5Border"></span><span>5 · 137+ kt</span></li>
+      </ul>
+    </div>
+    <div class="filter-legend track-color-legend" id="track-color-legend" hidden>
+      <h2 class="legend-heading" id="track-color-legend-title"></h2>
+      <ul class="filter-legend-list" id="track-color-legend-list"></ul>
+    </div>
+  </aside>
+
+  <section class="storm-panel glass" id="storm-panel" hidden role="region" aria-labelledby="storm-panel-title" aria-label="Storm details" data-i18n-aria-label="panel.title">
+    <button class="close-btn" id="close-panel" aria-label="Close storm details" data-i18n-aria-label="panel.closeStorm">×</button>
+    <div id="panel-sticky-header" class="panel-sticky-header"></div>
+    <div id="panel-body"></div>
+  </section>
+
+  <section class="stats-panel glass" id="stats-panel" hidden role="region" aria-labelledby="stats-panel-title" aria-label="Statistics and analysis" data-i18n-aria-label="stats.title">
+    <button class="close-btn" id="close-stats" aria-label="Close statistics" data-i18n-aria-label="panel.closeStats">×</button>
+    <div id="stats-body"></div>
+  </section>
+
+  <section class="compare-panel glass" id="compare-panel" hidden role="region" aria-labelledby="compare-panel-title" aria-label="Storm comparison" data-i18n-aria-label="compare.title">
+    <button class="close-btn" id="close-compare" aria-label="Close comparison" data-i18n-aria-label="panel.closeCompare">×</button>
+    <div id="compare-body"></div>
+  </section>
+
+  <section class="state-panel glass" id="state-panel" hidden role="region" aria-labelledby="state-panel-title" aria-label="State-level details" data-i18n-aria-label="state.title">
+    <button class="close-btn" id="close-state" aria-label="Close state details" data-i18n-aria-label="panel.closeState">×</button>
+    <div id="state-body"></div>
+  </section>
+
+  <section class="on-this-date-panel glass" id="on-this-date-panel" hidden role="region" aria-label="Storms on this date in history" data-i18n-aria-label="onthisdate.title">
+    <button class="close-btn" id="close-on-this-date" aria-label="Close on this date" data-i18n-aria-label="panel.closeDate">×</button>
+    <div id="on-this-date-body"></div>
+  </section>
+
+  <section class="table-view-panel glass" id="table-view-panel" hidden role="region" aria-labelledby="table-view-title" aria-label="Landfall data table" data-i18n-aria-label="table.title">
+    <div class="table-view-header">
+      <h2 id="table-view-title" data-i18n="table.title">Landfall Data Table</h2>
+      <button class="close-btn" id="close-table-view" aria-label="Close table view" data-i18n-aria-label="panel.closeTable">×</button>
+    </div>
+    <div id="table-view-body"></div>
+  </section>
+
+  <section class="prep-panel glass" id="prep-panel" hidden role="region" aria-labelledby="prep-panel-title" aria-label="Hurricane preparedness" data-i18n-aria-label="prep.title">
+    <button class="close-btn" id="close-prep" aria-label="Close hurricane preparedness" data-i18n-aria-label="prep.close">×</button>
+    <h2 id="prep-panel-title" data-i18n="prep.title">Hurricane preparedness</h2>
+    <div id="prep-body"></div>
+  </section>
+
+  <section class="evac-panel glass" id="evac-panel" hidden role="region" aria-labelledby="evac-panel-title" aria-describedby="evac-disclosure" aria-label="Evacuation zone lookup" data-i18n-aria-label="evac.title">
+    <button class="close-btn" id="close-evac" aria-label="Close evacuation zone lookup" data-i18n-aria-label="evac.close">×</button>
+    <h2 id="evac-panel-title" data-i18n="evac.title">Evacuation zone lookup</h2>
+    <p class="visually-hidden" id="evac-disclosure" data-i18n="evac.disclosure">Privacy: typed addresses are sent to Esri's World Geocoding Service. The map-point option sends latitude/longitude only to Florida's ArcGIS zone layer; HurricaneMap stores neither.</p>
+    <div id="evac-body"></div>
+  </section>
+
+  <section class="globe3d-panel" id="globe3d-panel" hidden role="dialog" aria-modal="true" aria-labelledby="globe3d-title" aria-describedby="globe3d-subtitle">
+    <iframe id="globe3d-frame" class="globe3d-canvas" src="globe.html" sandbox="allow-scripts" title="Interactive 3D hurricane track globe" data-i18n-title="globe.canvasLabel"></iframe>
+    <div class="globe3d-topbar glass">
+      <div class="globe3d-heading">
+        <h2 id="globe3d-title" data-i18n="globe.title">3D storm globe</h2>
+        <p id="globe3d-subtitle" data-i18n="globe.subtitle">Elevated tracks show wind intensity over time.</p>
+      </div>
+      <div class="globe3d-actions">
+        <label class="globe3d-toggle">
+          <input type="checkbox" id="globe3d-wind-cones" checked />
+          <span data-i18n="globe.windCones">Wind cones</span>
+        </label>
+        <button class="text-btn" id="globe3d-focus" type="button" data-i18n="globe.focus">Focus storm</button>
+        <button class="text-btn" id="globe3d-reset" type="button" data-i18n="globe.reset">Reset view</button>
+        <button class="close-btn" id="close-globe3d" type="button" aria-label="Close 3D storm globe" data-i18n-aria-label="globe.close">×</button>
+      </div>
+      <div class="globe3d-timeline">
+        <label for="globe3d-scrubber" data-i18n="globe.timeline">Timeline</label>
+        <input type="range" id="globe3d-scrubber" min="0" max="0" value="0" disabled aria-label="3D globe timeline" data-i18n-aria-label="globe.timeline" />
+        <span id="globe3d-time-label" data-i18n="globe.noTimeline">No timeline</span>
+      </div>
+      <div class="globe3d-status" id="globe3d-status" role="status" aria-live="polite" data-i18n="globe.inactive">3D globe inactive</div>
+    </div>
+  </section>
+
+  <section class="poster-view" id="poster-view" hidden role="dialog" aria-modal="true" aria-labelledby="poster-title" aria-describedby="poster-intro">
+    <div class="poster-shell glass">
+      <header class="poster-toolbar">
+        <div>
+          <h2 id="poster-title" data-i18n="poster.title">Track gallery poster</h2>
+          <p id="poster-intro" data-i18n="poster.intro">A high-resolution density portrait of the storms in your current filters.</p>
+        </div>
+        <div class="poster-actions">
+          <span id="poster-status" role="status" aria-live="polite"></span>
+          <button class="text-btn" id="poster-export" type="button" data-i18n="poster.export">Export PNG</button>
+          <button class="close-btn" id="close-poster" type="button" aria-label="Close track gallery poster" data-i18n-aria-label="poster.close">×</button>
+        </div>
+      </header>
+      <div class="poster-canvas-frame"><canvas id="poster-canvas" width="1800" height="1200"></canvas></div>
+    </div>
+  </section>
+
+  <section class="info-modal" id="info-modal" hidden role="dialog" aria-modal="true" aria-labelledby="info-modal-title">
+    <div class="info-card glass">
+      <button class="close-btn" id="close-info" aria-label="Close" data-i18n-aria-label="panel.close">×</button>
+      <h2 id="info-modal-title" data-i18n="about.title">About HurricaneMap</h2>
+      <p data-i18n="about.landfallsBody">Every dot is a recorded U.S. hurricane or tropical-storm landfall from NOAA HURDAT2.</p>
+      <h3 data-i18n="about.detectionTitle">How landfalls are detected</h3>
+      <ul>
+        <li data-i18n-html="about.explicitHtml"><strong>Explicit:</strong> HURDAT2 records flagged with the <code>L</code> identifier.</li>
+        <li data-i18n-html="about.inferredHtml"><strong>Inferred:</strong> Tropical tracks that cross U.S. land without an <code>L</code> marker.</li>
+        <li id="aoml-validation" data-i18n="about.aomlValidationLoading">Loading independent AOML ground-truth check…</li>
+      </ul>
+      <h3 data-i18n="about.gapsTitle">Known gaps in the source data</h3>
+      <ul>
+        <li data-i18n-html="about.gapMarkingHtml">HURDAT2 has a 1971-1990 continental landfall-marker gap.</li>
+        <li data-i18n="about.gapObservations">Early observing eras under-sample storms.</li>
+        <li data-i18n="about.gapRadii">Wind radii are available only in recent years.</li>
+      </ul>
+      <section class="data-provenance" aria-labelledby="data-provenance-title">
+        <h3 id="data-provenance-title" data-i18n="about.currentBuild">Current data build</h3>
+        <div id="data-provenance-body">
+          <p class="provenance-empty">Loading data-build details...</p>
+        </div>
+      </section>
+      <section class="archive-coverage" aria-labelledby="archive-coverage-title">
+        <h3 id="archive-coverage-title" data-i18n="about.archiveCoverageTitle">Archive coverage</h3>
+        <p class="archive-coverage-intro" data-i18n="about.archiveCoverageIntro">Bundled sources have different time ranges, update cycles, and availability.</p>
+        <div id="archive-coverage-body">
+          <p class="provenance-empty" data-i18n="about.archiveCoverageUnavailable">Archive coverage is unavailable.</p>
+        </div>
+      </section>
+      <div id="about-citation-host" class="citation-host"></div>
+      <h3 data-i18n="about.linksTitle">Each storm card links to</h3>
+      <ul>
+        <li data-i18n="about.linkWikipedia">Wikipedia article for the storm</li>
+        <li data-i18n="about.linkYouTube">YouTube search for footage and aftermath</li>
+        <li data-i18n="about.linkReports">NOAA Tropical Cyclone Reports archive</li>
+        <li data-i18n="about.linkWallet">National Hurricane Center storm wallet</li>
+      </ul>
+      <h3 data-i18n="about.radarTitle">Archived NEXRAD radar (📡)</h3>
+      <p data-i18n-html="about.radarIntroHtml">Storms from <strong>August 1995 onward</strong> include archived radar.</p>
+      <ul>
+        <li data-i18n-html="about.radarDirectHtml"><strong>Direct:</strong> select 📡 beside a landfall.</li>
+        <li data-i18n-html="about.radarAnimationHtml"><strong>Track animation:</strong> synchronize radar to the simulated clock.</li>
+      </ul>
+      <p data-i18n="about.coverageTitle">Coverage:</p>
+      <ul>
+        <li data-i18n-html="about.coverageConusHtml">Continental U.S. uses <code>n0r</code> reflectivity.</li>
+        <li data-i18n-html="about.coverageIslandsHtml">Hawaii and Puerto Rico use <code>n0q</code> reflectivity.</li>
+        <li data-i18n="about.coverageOld">No radar archive is available before 1995.</li>
+        <li data-i18n="about.coverageFallback">Missing local frames fall back to live IEM URLs.</li>
+      </ul>
+      <p class="meta" data-i18n-html="about.sourcesHtml">Data: NOAA NHC HURDAT2. Radar: Iowa State IEM. Maps: OpenStreetMap.</p>
+    </div>
+  </section>
+
+  <div class="loading" id="loading" role="status" aria-live="polite" aria-label="Loading HurricaneMap data" data-i18n-aria-label="loading.label">
+    <div class="spinner" aria-hidden="true">
+      <svg class="hurricane-icon" viewBox="0 0 24 24" width="42" height="42" fill="none" stroke="currentColor" stroke-width="1.5">
+        <!-- Outer spiral -->
+        <circle cx="12" cy="12" r="10" opacity="0.3" />
+        <!-- Middle bands -->
+        <ellipse cx="12" cy="12" rx="7" ry="8" opacity="0.5" />
+        <!-- Inner eye with rotation indicator -->
+        <circle cx="12" cy="5" r="1.5" fill="currentColor" />
+        <circle cx="12" cy="12" r="2" fill="currentColor" opacity="0.8" />
+      </svg>
+    </div>
+    <p data-i18n="loading.body">Charting 174 years of Atlantic and Pacific landfalls…</p>
+  </div>
+
+  <!-- Keyboard shortcuts palette -->
+  <dialog id="keyboard-palette" class="keyboard-palette glass" hidden aria-labelledby="palette-title">
+    <div class="palette-content">
+      <div class="palette-header">
+        <h2 id="palette-title" data-i18n="shortcuts.title">Keyboard Shortcuts</h2>
+        <button class="palette-close icon-btn" title="Close shortcuts palette" aria-label="Close shortcuts palette" data-i18n-title="shortcuts.close" data-i18n-aria-label="shortcuts.close">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M18.3 5.71a.996.996 0 00-1.41 0L12 10.59 7.11 5.7a.996.996 0 10-1.41 1.41L10.59 12l-4.89 4.89a.996.996 0 101.41 1.41L12 13.41l4.89 4.89a.996.996 0 101.41-1.41L13.41 12l4.89-4.89c.38-.38.38-1.02 0-1.4z"/></svg>
+        </button>
+      </div>
+      <div class="palette-shortcuts">
+        <div class="shortcut-group">
+          <h3 data-i18n="shortcuts.global">Global</h3>
+          <div class="shortcut-row">
+            <kbd>?</kbd>
+            <span data-i18n="shortcuts.open">Open this shortcuts palette</span>
+          </div>
+          <div class="shortcut-row">
+            <kbd>Esc</kbd>
+            <span data-i18n="shortcuts.dismiss">Close dialogs, clear focus</span>
+          </div>
+        </div>
+        <div class="shortcut-group">
+          <h3 data-i18n="shortcuts.filters">Filters</h3>
+          <div class="shortcut-row">
+            <kbd>Ctrl</kbd> <kbd>M</kbd>
+            <span data-i18n="shortcuts.major">Filter to major hurricanes only (Cat 3-5)</span>
+          </div>
+        </div>
+        <div class="shortcut-group">
+          <h3 data-i18n="shortcuts.navigation">Navigation</h3>
+          <div class="shortcut-row">
+            <kbd>Tab</kbd>
+            <span data-i18n="shortcuts.next">Navigate to next interactive element</span>
+          </div>
+          <div class="shortcut-row">
+            <kbd>Shift</kbd> <kbd>Tab</kbd>
+            <span data-i18n="shortcuts.previous">Navigate to previous interactive element</span>
+          </div>
+        </div>
+        <div class="shortcut-group">
+          <h3 data-i18n="shortcuts.timeline">Timeline (when focused)</h3>
+          <div class="shortcut-row">
+            <kbd>←</kbd> <kbd>→</kbd>
+            <span data-i18n="shortcuts.stepYears">Step through years</span>
+          </div>
+          <div class="shortcut-row">
+            <kbd>Shift</kbd> <kbd>←</kbd> <kbd>→</kbd>
+            <span data-i18n="shortcuts.adjustYears">Adjust year range</span>
+          </div>
+        </div>
+      </div>
+      <p class="palette-footer" data-i18n-html="shortcuts.footerHtml">Press <kbd>Esc</kbd> to close any open panel or dialog.</p>
+    </div>
+  </dialog>
+
+  </main>
+
+  <script src="vendor/leaflet.js"></script>
+  <script src="vendor/leaflet-heat.js"></script>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

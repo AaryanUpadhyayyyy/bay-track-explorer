@@ -1,0 +1,145 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+
+import {
+  destinationPointNmi,
+  haversineKm,
+  initialBearingDeg,
+  pointToSegmentDistanceKm,
+} from '../src/geodesy.js';
+import { readFile as readSource } from 'node:fs/promises';
+import {
+  COASTAL_CITIES,
+  closestApproach,
+  computeCityReturnPeriods,
+} from '../src/metrics.js';
+
+const vectors = JSON.parse(await readFile(
+  new URL('../tests/fixtures/geodesy-reference.json', import.meta.url),
+  'utf8',
+));
+const toleranceKm = 1e-6;
+for (const vector of vectors.distance_vectors) {
+  const actual = haversineKm(...vector.from, ...vector.to);
+  assert(Math.abs(actual - vector.expected_km) <= toleranceKm, `${vector.name}: ${actual} km`);
+}
+
+// Long range is its own error class: an implementation can be exact across a
+// basin and still run short across an ocean, which is what Tropycal disclosed
+// at roughly 4.5% over 4000 km. These references were computed independently of
+// this code, so they catch that rather than recording it.
+const longBaselines = vectors.distance_vectors.filter(vector => vector.long_baseline);
+assert(longBaselines.length >= 2, 'the reference set must keep at least two long-baseline vectors');
+for (const vector of longBaselines) {
+  const actual = haversineKm(...vector.from, ...vector.to);
+  assert(
+    vector.expected_km >= vectors.long_baseline_min_km,
+    `${vector.name}: a long-baseline vector must span at least ${vectors.long_baseline_min_km} km, not ${vector.expected_km}`,
+  );
+  assert(
+    Math.abs(actual - vector.expected_km) <= toleranceKm,
+    `${vector.name}: ${actual} km against an independent ${vector.expected_km} km`,
+  );
+}
+for (const vector of vectors.segment_vectors) {
+  const actual = pointToSegmentDistanceKm(
+    ...vector.point,
+    [vector.start[1], vector.start[0]],
+    [vector.end[1], vector.end[0]],
+  );
+  assert(Math.abs(actual - vector.expected_km) <= toleranceKm, `${vector.name}: ${actual} km`);
+}
+for (const vector of vectors.closest_approach_vectors) {
+  const approach = closestApproach(vector.track, ...vector.target);
+  assert(approach, `${vector.name}: expected a closest approach`);
+  assert(Math.abs(approach.distance_km - vector.expected_km) <= toleranceKm, `${vector.name}: ${approach.distance_km} km`);
+  assert.equal(approach.segment?.start_idx, 0, `${vector.name}: segment start`);
+  assert.equal(approach.segment?.end_idx, 1, `${vector.name}: segment end`);
+  assert(Math.abs(approach.segment.fraction - vector.expected_fraction) <= 1e-9, `${vector.name}: fraction`);
+  assert(Math.abs(approach.track_point.lat - vector.expected_lat) <= 1e-9, `${vector.name}: projected latitude`);
+  assert(Math.abs(approach.track_point.lon - vector.expected_lon) <= 1e-9, `${vector.name}: projected longitude`);
+  assert(Math.abs(approach.track_point.wind - vector.expected_wind) <= 1e-9, `${vector.name}: interpolated wind`);
+  assert.equal(approach.track_point.t, vector.expected_time, `${vector.name}: interpolated timestamp`);
+  const nearestFixKm = Math.min(
+    haversineKm(vector.track[0].lat, vector.track[0].lon, ...vector.target),
+    haversineKm(vector.track[1].lat, vector.track[1].lon, ...vector.target),
+  );
+  assert(nearestFixKm > approach.distance_km + 10, `${vector.name}: nearest-fix regression guard`);
+}
+assert(Math.abs(initialBearingDeg(0, 0, 10, 0)) < 1e-9, 'north bearing');
+assert(Math.abs(initialBearingDeg(0, 179.9, 0, -179.9) - 90) < 1e-9, 'antimeridian bearing');
+const north = destinationPointNmi(20, -80, 0, 60);
+assert(Math.abs(north[0] - 20.9993) < 0.01 && Math.abs(north[1] + 80) < 1e-9, 'nautical-mile destination');
+
+const storms = JSON.parse(await readFile(new URL('../data/storms.json', import.meta.url), 'utf8'));
+const catalogueChecks = [
+  ['Miami, FL', 53],
+  ['Cape Hatteras, NC', 82],
+  ['New York, NY', 34],
+];
+for (const [cityName, expectedCount] of catalogueChecks) {
+  const city = COASTAL_CITIES.find(candidate => candidate.name === cityName);
+  assert(city, `${cityName}: city fixture`);
+  const count = storms.filter(storm => {
+    const approach = closestApproach(storm.track, city.lat, city.lon);
+    return approach && approach.distance_mi <= 50;
+  }).length;
+  assert.equal(count, expectedCount, `${cityName}: true track count`);
+}
+
+const segmentOnlyStorms = [2000, 2005].map(year => ({
+  year,
+  track: [
+    { t: `${year}-08-01T00:00:00Z`, lat: 0, lon: 0, wind: 120 },
+    { t: `${year}-08-01T06:00:00Z`, lat: 0, lon: 1, wind: 120 },
+  ],
+}));
+const segmentOnlyReturnPeriods = computeCityReturnPeriods(
+  { name: 'fixture', lat: 0.3, lon: 0.5 },
+  segmentOnlyStorms,
+);
+assert.equal(segmentOnlyReturnPeriods.cat1_count, 2, 'return periods count segment-only Cat 1 events');
+assert.equal(segmentOnlyReturnPeriods.cat3_count, 2, 'return periods count segment-only Cat 3 events');
+assert.equal(segmentOnlyReturnPeriods.cat5_count, 0, 'return periods exclude sub-Cat 5 events');
+assert.equal(segmentOnlyReturnPeriods.cat3_years, 5, 'return periods use one event per storm');
+
+// Every consumer of this arithmetic, not just the module that owns it. The
+// independent ground-truth check and the AOML builder each carried a private
+// haversine with the Earth radius written out again, and nothing held either to
+// these vectors: the whole point of recomputing the delta in a second language
+// is lost if the second language quietly uses different maths.
+//
+// This is a source check, and it says so, because the two consumers cannot be
+// driven the same way. build_aoml_landfalls.py IS driven by these vectors, in
+// test-geodesy-python.py. validate-data.mjs is 997 lines of top-level script,
+// so importing it runs a full validation; rather than keep an exported wrapper
+// nothing could reach, the wrapper is gone and the call site uses the shared
+// implementation directly. What remains to catch is somebody writing a fresh
+// copy, and the first version of this check could not: it looked for
+// `Math.asin`, which the equally standard `atan2` spelling of the haversine
+// walks straight past. A private copy needs an Earth radius and it needs
+// inverse trigonometry, so both are refused, in either language.
+// Refusing either half on its own was wrong, and noisily so: Math.atan2 is
+// how you compute a compass bearing, and 6350 is a plausible row cap. A
+// distance formula needs the inverse trigonometry AND the radius, so both
+// have to be present before this says anything. The radius pattern also
+// refuses a match inside a longer number, or 1.6371 reads as an Earth radius.
+const INVERSE_TRIG = /\b(?:Math\.)?(asin|atan2)\s*\(/;
+const EARTH_RADIUS = /(?<![\d.])63[0-9]{2}(?:\.[0-9]+)?(?![\d])/;
+for (const [relative, importPattern] of [
+  ['./validate-data.mjs', /from '\.\.\/src\/geodesy\.js'/],
+  ['./build_aoml_landfalls.py', /from preprocess_hurdat2 import haversine_km/],
+]) {
+  const source = await readSource(new URL(relative, import.meta.url), 'utf8');
+  assert(importPattern.test(source), `${relative} no longer takes its distance arithmetic from the shared implementation`);
+  const withoutTheImport = source.replace(/haversine/gi, '');
+  const trig = INVERSE_TRIG.exec(withoutTheImport);
+  const radius = EARTH_RADIUS.exec(withoutTheImport);
+  assert(
+    !(trig && radius),
+    `${relative} contains ${trig?.[1]}() and the constant ${radius?.[0]}, which together are a private haversine; `
+    + 'the reference vectors do not cover it, so take the distance from src/geodesy.js',
+  );
+}
+
+console.log(`geodesy ok (${vectors.distance_vectors.length} distances, ${vectors.segment_vectors.length} segments, ${catalogueChecks.length} track counts)`);

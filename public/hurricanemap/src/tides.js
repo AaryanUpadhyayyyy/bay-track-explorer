@@ -1,0 +1,281 @@
+// "What the water did" — NOAA CO-OPS tide-gauge water levels around a
+// storm's landfall. Observed hourly heights vs astronomical predictions from
+// api.tidesandcurrents.noaa.gov (CORS *; hourly product limited to 1
+// year/request — our ±2-day windows are far inside that). Station picking
+// uses the static data/tide-stations.json snapshot (see
+// scripts/build_tide_stations.py). Loaded on demand from the storm panel —
+// never automatically — to stay polite to the API.
+import { escapeHtml } from './html-utils.js';
+import { t } from './i18n.js';
+import { categoryStrength } from './data.js';
+import { haversineKm } from './geodesy.js';
+import {
+  beginOptionalFeed,
+  cancelOptionalFeed,
+  completeOptionalFeed,
+  failOptionalFeed,
+} from './optional-feeds.js';
+import { mountOptionalFeedStatus } from './optional-feed-ui.js';
+import { fetchWithTimeout, REQUEST_TIMEOUT_MS } from './network.js';
+
+const API = 'https://api.tidesandcurrents.noaa.gov/api/prod/datagetter';
+// The storm panel rebuilds its host on every render, so a load started for one
+// storm can still be in flight when the next storm's block is mounted. Its
+// results would be written into a detached node, and the feed it began would
+// never settle.
+let loadInFlight = null;
+const MAX_STATIONS = 3;
+const MAX_KM = 150;
+const WINDOW_HOURS = 48;
+const REQUEST_ATTEMPTS = 2;
+
+let stationsPromise = null;
+
+function loadStations() {
+  if (!stationsPromise) {
+    stationsPromise = fetchWithTimeout('data/tide-stations.json', {}, REQUEST_TIMEOUT_MS.data)
+      .then(res => {
+        if (!res.ok) {
+          const error = new Error(`tide station index returned ${res.status}`);
+          error.responseStatus = res.status;
+          throw error;
+        }
+        return res.json();
+      });
+    stationsPromise.catch(() => {
+      stationsPromise = null;
+    });
+  }
+  return stationsPromise;
+}
+
+export function nearestStations(stations, lat, lon, { max = MAX_STATIONS, maxKm = MAX_KM } = {}) {
+  if (!Array.isArray(stations)) return [];
+  return stations
+    .map(station => ({ ...station, km: haversineKm(lat, lon, station.lat, station.lon) }))
+    .filter(station => station.km <= maxKm)
+    .sort((a, b) => a.km - b.km)
+    .slice(0, max);
+}
+
+function yyyymmdd(date) {
+  return date.toISOString().slice(0, 10).replace(/-/g, '');
+}
+
+export function buildDataUrl(stationId, product, landfallIso) {
+  const center = new Date(landfallIso);
+  const begin = new Date(center.getTime() - WINDOW_HOURS * 3600_000);
+  const end = new Date(center.getTime() + WINDOW_HOURS * 3600_000);
+  const params = new URLSearchParams({
+    product,
+    application: 'HurricaneMap',
+    begin_date: yyyymmdd(begin),
+    end_date: yyyymmdd(end),
+    datum: 'MLLW',
+    station: stationId,
+    time_zone: 'gmt',
+    units: 'english',
+    format: 'json',
+  });
+  if (product === 'predictions') params.set('interval', 'h');
+  return `${API}?${params.toString()}`;
+}
+
+function parseSeries(payload, key) {
+  const rows = payload?.[key];
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .map(row => ({ time: Date.parse(`${row.t.replace(' ', 'T')}Z`), ft: Number(row.v) }))
+    .filter(point => Number.isFinite(point.time) && Number.isFinite(point.ft));
+}
+
+/** Max observed-minus-predicted residual (ft), matching points by hour. */
+export function peakResidual(observed, predicted, { centerTime = null, windowHours = WINDOW_HOURS } = {}) {
+  const predictedByTime = new Map(predicted.map(point => [point.time, point.ft]));
+  const windowMs = windowHours * 3600_000;
+  let peak = null;
+  for (const point of observed) {
+    if (Number.isFinite(centerTime) && Math.abs(point.time - centerTime) > windowMs) continue;
+    const base = predictedByTime.get(point.time);
+    if (base == null) continue;
+    const residual = point.ft - base;
+    if (!peak || residual > peak.residual) peak = { residual, time: point.time, observed: point.ft };
+  }
+  return peak;
+}
+
+export async function fetchWithRetry(url, {
+  attempts = REQUEST_ATTEMPTS,
+  timeoutMs = REQUEST_TIMEOUT_MS.tides,
+  fetchImpl,
+  signal = null,
+} = {}) {
+  let lastResponse = null;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+    try {
+      const response = await fetchWithTimeout(url, { cache: 'no-cache', signal }, timeoutMs, fetchImpl);
+      lastResponse = response;
+      if (response.ok || (response.status < 500 && response.status !== 429)) return response;
+    } catch (error) {
+      // Retry timeouts and transient network failures, but a cancelled load is
+      // not transient: nothing is waiting for the answer any more.
+      if (signal?.aborted || error?.name === 'AbortError') throw new DOMException('Aborted', 'AbortError');
+    }
+  }
+  return lastResponse;
+}
+
+function exactWindow(series, centerTime) {
+  const windowMs = WINDOW_HOURS * 3600_000;
+  return series.filter(point => Math.abs(point.time - centerTime) <= windowMs);
+}
+
+async function fetchStationSeries(station, landfallIso, signal = null) {
+  const centerTime = Date.parse(landfallIso);
+  const [obsRes, predRes] = await Promise.all([
+    fetchWithRetry(buildDataUrl(station.id, 'hourly_height', landfallIso), { signal }),
+    fetchWithRetry(buildDataUrl(station.id, 'predictions', landfallIso), { signal }),
+  ]);
+  if (!obsRes?.ok || !predRes?.ok) {
+    const response = !obsRes?.ok ? obsRes : predRes;
+    const error = new Error(`tide station ${station.id} returned ${response?.status || 0}`);
+    error.responseStatus = response?.status || 0;
+    throw error;
+  }
+  const observed = exactWindow(parseSeries(await obsRes.json(), 'data'), centerTime);
+  const predicted = exactWindow(parseSeries(await predRes.json(), 'predictions'), centerTime);
+  if (observed.length < 12 || predicted.length < 12) return null;
+  return { station, observed, predicted, peak: peakResidual(observed, predicted, { centerTime }) };
+}
+
+function chartSvg({ observed, predicted }, landfallMs) {
+  const W = 320;
+  const H = 110;
+  const PAD = 6;
+  const all = [...observed, ...predicted];
+  const t0 = Math.min(...all.map(p => p.time));
+  const t1 = Math.max(...all.map(p => p.time));
+  const v0 = Math.min(...all.map(p => p.ft));
+  const v1 = Math.max(...all.map(p => p.ft));
+  const x = time => PAD + ((time - t0) / Math.max(1, t1 - t0)) * (W - 2 * PAD);
+  const y = ft => H - PAD - ((ft - v0) / Math.max(0.01, v1 - v0)) * (H - 2 * PAD);
+  const path = series => series.map((p, i) => `${i ? 'L' : 'M'}${x(p.time).toFixed(1)},${y(p.ft).toFixed(1)}`).join('');
+  const landfallX = landfallMs >= t0 && landfallMs <= t1 ? x(landfallMs).toFixed(1) : null;
+  return `
+    <svg class="tide-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${t('tides.chartLabel')}" preserveAspectRatio="none">
+      ${landfallX ? `<line x1="${landfallX}" y1="0" x2="${landfallX}" y2="${H}" class="tide-landfall-line" />` : ''}
+      <path d="${path(predicted)}" class="tide-predicted" />
+      <path d="${path(observed)}" class="tide-observed" />
+    </svg>`;
+}
+
+function stationCard(result, landfallMs) {
+  const { station, peak } = result;
+  const peakLine = peak
+    ? `<div class="tide-peak">${t('tides.peakResidual')}: <strong>+${peak.residual.toFixed(1)} ft</strong> · ${new Date(peak.time).toISOString().slice(0, 16).replace('T', ' ')}Z</div>`
+    : '';
+  return `
+    <div class="tide-station">
+      <div class="tide-station-head">
+        <strong>${escapeHtml(station.name)}${station.state ? `, ${escapeHtml(station.state)}` : ''}</strong>
+        <span class="tide-km">${Math.round(station.km)} km</span>
+      </div>
+      ${chartSvg(result, landfallMs)}
+      ${peakLine}
+    </div>`;
+}
+
+export async function renderTidesBlock(host, storm) {
+  if (!host) return;
+  if (loadInFlight) {
+    // Settle the superseded feed here rather than in the load's own
+    // continuation: the load can be parked anywhere, and until the feed leaves
+    // 'loading' the status host hides its retry button.
+    const superseded = loadInFlight;
+    loadInFlight = null;
+    superseded.controller.abort();
+    cancelOptionalFeed('tides', { requestId: superseded.requestId });
+  }
+  // Hourly verified water levels are reliable from the 1990s on; older
+  // storms rarely have retrievable gauge records via the API.
+  if (!storm?.year || storm.year < 1990) return;
+  // Anchor on the strongest landfall (Katrina: the LA Cat-3, not the FL
+  // Cat-1 four days earlier) — that's the water story people come for.
+  const landfall = (storm.us_landfalls || [])
+    .filter(lf => lf?.t && Number.isFinite(lf.lat) && Number.isFinite(lf.lon))
+    .reduce((best, lf) => (!best || categoryStrength(lf.category) > categoryStrength(best.category) ? lf : best), null);
+  if (!landfall) return;
+
+  host.innerHTML = `
+    <h3 class="panel-section-h3">${t('tides.title')}</h3>
+    <div id="tides-feed-status" class="optional-feed-status-host"></div>
+    <div class="tides-block">
+      <button class="text-btn tide-load-btn" type="button">${t('tides.load')}</button>
+    </div>`;
+  let loading = false;
+  const load = async event => {
+    if (loading) return;
+    loading = true;
+    const block = host.querySelector('.tides-block');
+    if (!block) {
+      loading = false;
+      return;
+    }
+    if (event?.target) {
+      event.target.disabled = true;
+      event.target.textContent = t('tides.loading');
+    }
+    const request = beginOptionalFeed('tides');
+    const controller = new AbortController();
+    loadInFlight = { controller, requestId: request.requestId };
+    try {
+      const stations = await loadStations();
+      if (controller.signal.aborted) return;
+      const nearby = nearestStations(stations, landfall.lat, landfall.lon);
+      const settled = await Promise.allSettled(
+        nearby.map(station => fetchStationSeries(station, landfall.t, controller.signal)),
+      );
+      const results = settled.filter(item => item.status === 'fulfilled').map(item => item.value).filter(Boolean);
+      // Settle the feed before leaving. Returning while it is still 'loading'
+      // hides the retry button, so the next storm's block offers no way out.
+      if (!host.isConnected || controller.signal.aborted) {
+        cancelOptionalFeed('tides', { requestId: request.requestId });
+        return;
+      }
+      if (!results.length) {
+        const failure = settled.find(item => item.status === 'rejected')?.reason;
+        if (failure) throw failure;
+        completeOptionalFeed('tides', { empty: true, itemCount: 0, requestId: request.requestId });
+        block.innerHTML = `<div class="tide-empty">${t('tides.empty')}</div><button class="text-btn tide-load-btn" type="button">${t('tides.retry')}</button>`;
+        wireLoadButton();
+        return;
+      }
+      const landfallMs = Date.parse(landfall.t);
+      completeOptionalFeed('tides', { itemCount: results.length, requestId: request.requestId });
+      block.innerHTML = `
+        <div class="tide-legend">
+          <span class="tide-key tide-key--observed">${t('tides.observed')}</span>
+          <span class="tide-key tide-key--predicted">${t('tides.predicted')}</span>
+          <span class="tide-key tide-key--landfall">${t('tides.landfall')}</span>
+        </div>
+        ${results.map(result => stationCard(result, landfallMs)).join('')}
+        <div class="im-source"><a href="https://tidesandcurrents.noaa.gov/" target="_blank" rel="noopener">${t('tides.source')}</a></div>`;
+    } catch (error) {
+      if (!host.isConnected || controller.signal.aborted || error?.name === 'AbortError') {
+        cancelOptionalFeed('tides', { requestId: request.requestId });
+        return;
+      }
+      failOptionalFeed('tides', { error, responseStatus: error.responseStatus || 0, requestId: request.requestId });
+      block.innerHTML = `<div class="tide-empty">${t('tides.empty')}</div><button class="text-btn tide-load-btn" type="button">${t('tides.retry')}</button>`;
+      wireLoadButton();
+    }
+    finally {
+      loading = false;
+      if (loadInFlight?.controller === controller) loadInFlight = null;
+    }
+  };
+  const wireLoadButton = () => host.querySelector('.tide-load-btn')?.addEventListener('click', load, { once: true });
+  mountOptionalFeedStatus(host.querySelector('#tides-feed-status'), 'tides', { onRetry: load });
+  wireLoadButton();
+}

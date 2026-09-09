@@ -1,0 +1,139 @@
+import assert from 'node:assert/strict';
+
+import { getDamageMillions, getFatalityCount, tornadoSearchHint, tornadoSearchUrl } from '../src/impact-utils.js';
+import { getCoverageYearRange } from '../src/data.js';
+import { csvEscape } from '../src/csv.js';
+import { buildPublicationCSV, publicationCategoryLabel } from '../src/export.js';
+import { buildExports } from '../src/metrics.js';
+import { escapeCSV } from '../src/compare-rows.js';
+import { inflateUSD } from '../src/inflation.js';
+import { buildFilterTitle, findImpactLeader, generateStatisticalReport } from '../src/report.js';
+
+const landfalls = [
+  { storm_id: 'ALPHA2000', name: 'ALPHA', year: 2000, wind: 80 },
+  { storm_id: 'BETA2001', name: 'BETA', year: 2001, wind: 90 },
+  { storm_id: 'ALPHA2000', name: 'ALPHA', year: 2000, wind: 60 },
+];
+
+const impacts = {
+  ALPHA2000: { deaths_total: 12, damage_millions_usd: 450 },
+  BETA2001: { deaths_total: 2, damage_millions_usd: 1500 },
+};
+
+assert.equal(findImpactLeader(landfalls, getFatalityCount, { getImpacts: id => impacts[id] }).storm_id, 'ALPHA2000');
+assert.equal(findImpactLeader(landfalls, getDamageMillions, { getImpacts: id => impacts[id] }).storm_id, 'BETA2001');
+
+assert.equal(csvEscape('=HYPERLINK("https://example.com")', { preventFormula: true }), `"'=HYPERLINK(""https://example.com"")"`);
+assert.equal(csvEscape('-89.600', { preventFormula: false }), '-89.600');
+assert.equal(csvEscape('Louisiana, USA'), '"Louisiana, USA"');
+
+// There were three of these and they disagreed: one rendered a null cell empty,
+// one wrote the literal text "null" into it, and only one guarded against a cell
+// a spreadsheet would read as a formula. All three call the same rule now, so
+// the rule is pinned once and every export inherits it.
+assert.equal(csvEscape(null), '');
+assert.equal(csvEscape(undefined), '');
+assert.equal(escapeCSV(null), '');
+assert.equal(escapeCSV(undefined), '');
+assert.equal(csvEscape(0), '0', 'a measured zero is not an empty cell');
+assert.equal(csvEscape(false), 'false');
+// A carriage return ends the record for a strict RFC 4180 reader, so it has to
+// force quoting the way a newline does. Two of the three escapers ignored it.
+assert.equal(csvEscape('a\rb'), '"a\rb"');
+assert.equal(escapeCSV('a\rb'), '"a\rb"');
+assert.equal(escapeCSV('=cmd|calc', { preventFormula: true }), "'=cmd|calc");
+
+// End to end through the track export, which used to write the literal text
+// "null" into every cell a storm had no reading for, and passed a status
+// straight through whatever it began with.
+{
+  const storm = {
+    id: 'AL992099',
+    name: 'TESTSTORM',
+    year: 2099,
+    track: [
+      { t: '2099-09-01T00:00:00Z', lat: 25, lon: -80, wind: 60, pres: null, status: 'TS' },
+      { t: '2099-09-01T06:00:00Z', lat: -26.5, lon: -81, wind: null, pres: 980, status: '=SUM(A1)' },
+    ],
+    us_landfalls: [],
+  };
+  const body = buildExports(storm).csv.body;
+  const dataRows = body.split('\n').filter(line => line.startsWith('2099-'));
+  assert.equal(dataRows.length, 2, `expected two data rows, got ${dataRows.length}`);
+  assert.ok(!/(^|,)null(,|$)/.test(body), `the track CSV wrote a literal null cell: ${dataRows.join(' | ')}`);
+  assert.ok(dataRows[0].includes(',,'), `a missing pressure should be an empty cell: ${dataRows[0]}`);
+  assert.ok(
+    dataRows[1].includes("'=SUM(A1)"),
+    `a status beginning with = reached the sheet as a formula: ${dataRows[1]}`,
+  );
+  assert.ok(
+    dataRows[1].includes('-26.5') && !dataRows[1].includes("'-26.5"),
+    `a negative latitude must stay a number: ${dataRows[1]}`,
+  );
+}
+assert.equal(publicationCategoryLabel(0), 'TD');
+assert.equal(publicationCategoryLabel(-1), 'TS');
+
+assert.deepEqual(getCoverageYearRange({ coverage: { year_range: [2026, 1851] } }), [1851, 2026]);
+assert.equal(
+  buildFilterTitle({ yearMin: 1851, yearMax: 2026, categories: new Set(['ts', '1', '2', '3', '4', '5']), state: '' }, [1851, 2026]),
+  'All landfalls (1851-2026, all categories, all states)',
+);
+
+const exportLandfalls = [
+  { storm_id: 'ALPHA2000', name: 'ALPHA', year: 2000, t: '2000-08-01T12:00:00Z', wind: 80, category: 1, state: 'Florida' },
+  { storm_id: 'BETA2001', name: 'BETA', year: 2001, t: '2001-09-01T12:00:00Z', wind: 90, category: 2, state: 'Louisiana' },
+];
+const exportFilters = { yearMin: 2000, yearMax: 2001, categories: new Set(['1', '2']), state: '' };
+const publication = buildPublicationCSV(exportFilters, {
+  landfalls: exportLandfalls,
+  generatedAt: '2026-08-02T12:34:56.000Z',
+});
+assert.equal(publication.provenance.schema_version, 1);
+assert.match(publication.csv, /# Provenance \(JSON, schema v1\):/);
+
+const report = generateStatisticalReport(exportFilters, {
+  landfalls: exportLandfalls,
+  generatedAt: '2026-08-02T12:34:56.000Z',
+  coverageYearRange: [1851, 2025],
+  getImpacts: id => impacts[id],
+});
+assert.equal(report.provenance.schema_version, 1);
+assert.match(report.markdown, /## Release Provenance/);
+
+const futureDamage = inflateUSD(125, 2025);
+assert.deepEqual(futureDamage, { real: 125, factor: 1, baseYear: 2025, currentDollars: true });
+
+// This used to assert statefips === '22,LOUISIANA,28,MISSISSIPPI,12,FLORIDA'.
+// That assertion was wrong: it pinned the shape of a parameter the destination
+// ignores. NCEI's Storm Events is now a client-rendered app that reads no
+// filters from the URL, so the old link opened an unfiltered landing page while
+// the test reported the filter as correct. The contract is now the gating (who
+// gets a link at all) and the search terms handed to the reader.
+const katrina = {
+  year: 2005,
+  track: [{ t: '2005-08-23T18:00:00Z' }, { t: '2005-08-31T18:00:00Z' }],
+  us_landfalls: [{ state: 'Louisiana' }, { state: 'Mississippi' }, { state: 'Florida' }, { state: 'Oregon' }],
+};
+const tornadoUrl = tornadoSearchUrl(katrina);
+assert.equal(tornadoUrl, 'https://www.ncei.noaa.gov/access/storm-events-database/search');
+assert.equal(new URL(tornadoUrl).search, '', 'no query string: every parameter form is ignored by the destination');
+// The parts stay separate so the sentence around them can be translated: the
+// connective used to be a hardcoded English "to" inside the Spanish and Haitian
+// Creole strings. State names are deliberately not translated, because they are
+// typed into an English form.
+assert.deepEqual(
+  tornadoSearchHint(katrina),
+  { states: 'Louisiana, Mississippi, Florida', from: '2005-08-23', to: '2005-08-31' },
+  'the reader gets the terms the link cannot carry, and Oregon is dropped as uncovered',
+);
+// Storm Events begins in 1950, and a storm with no covered landfall state has
+// nothing to look up, so neither gets a link at all.
+assert.equal(tornadoSearchUrl({ ...katrina, year: 1949 }), null);
+assert.equal(tornadoSearchHint({ ...katrina, year: 1949 }), null);
+assert.equal(tornadoSearchUrl({ ...katrina, us_landfalls: [{ state: 'Oregon' }] }), null);
+assert.equal(tornadoSearchUrl({ ...katrina, us_landfalls: [] }), null);
+assert.equal(tornadoSearchUrl({ ...katrina, track: [{ t: 'not a date' }] }), null);
+assert.equal(tornadoSearchUrl({ ...katrina, track: [] }), null);
+
+console.log('report export ok');

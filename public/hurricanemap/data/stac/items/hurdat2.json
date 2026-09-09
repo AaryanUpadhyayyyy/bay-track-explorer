@@ -1,0 +1,174 @@
+{
+  "stac_version": "1.1.0",
+  "stac_extensions": [
+    "https://stac-extensions.github.io/file/v2.1.0/schema.json"
+  ],
+  "type": "Feature",
+  "id": "hurdat2-data",
+  "collection": "hurdat2",
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+      [
+        [
+          -165.8,
+          8.5
+        ],
+        [
+          -165.8,
+          81
+        ],
+        [
+          63,
+          81
+        ],
+        [
+          63,
+          8.5
+        ],
+        [
+          -165.8,
+          8.5
+        ]
+      ]
+    ]
+  },
+  "bbox": [
+    -165.8,
+    8.5,
+    63,
+    81
+  ],
+  "properties": {
+    "datetime": null,
+    "start_datetime": "1851-06-25T00:00:00Z",
+    "end_datetime": "2025-07-07T18:00:00Z",
+    "hurricanemap:storm_count": 595,
+    "hurricanemap:landfall_event_count": 759,
+    "hurricanemap:year_range": [
+      1851,
+      2025
+    ],
+    "hurricanemap:basins": [
+      "AL",
+      "EP"
+    ],
+    "hurricanemap:coverage_status": "final",
+    "hurricanemap:inferred_landfall_count": 56,
+    "hurricanemap:source_url": "https://www.nhc.noaa.gov/data/hurdat/",
+    "hurricanemap:source_date": "2026-02-27",
+    "hurricanemap:distribution": [
+      "core",
+      "full"
+    ]
+  },
+  "links": [
+    {
+      "rel": "self",
+      "href": "hurdat2.json",
+      "type": "application/geo+json"
+    },
+    {
+      "rel": "parent",
+      "href": "../collections/hurdat2.json",
+      "type": "application/json"
+    },
+    {
+      "rel": "collection",
+      "href": "../collections/hurdat2.json",
+      "type": "application/json"
+    },
+    {
+      "rel": "root",
+      "href": "../catalog.json",
+      "type": "application/json"
+    }
+  ],
+  "assets": {
+    "storms": {
+      "href": "../../storms.json.gz",
+      "title": "HURDAT2 storm tracks",
+      "type": "application/gzip",
+      "roles": [
+        "data"
+      ],
+      "file:size": 234595,
+      "file:checksum": "sha256:13a51a7fcbaccbe4af1960550cc7da0e4e7e555aa41334af2d9c04081aa16f1a",
+      "hurricanemap:source_url": "https://www.nhc.noaa.gov/data/hurdat/",
+      "hurricanemap:source_date": "2026-08-08",
+      "hurricanemap:license": "public-domain",
+      "hurricanemap:distribution": [
+        "core",
+        "full"
+      ]
+    },
+    "landfalls": {
+      "href": "../../landfalls.json",
+      "title": "US landfall event index",
+      "type": "application/json",
+      "roles": [
+        "data"
+      ],
+      "file:size": 142671,
+      "file:checksum": "sha256:7361e307cfd43dda7a36b32e2babb8ae244d4fc5f6be3f6a95fbc48b7a1aadd1",
+      "hurricanemap:source_url": "https://www.nhc.noaa.gov/data/hurdat/",
+      "hurricanemap:source_date": "2026-08-08",
+      "hurricanemap:license": "public-domain",
+      "hurricanemap:distribution": [
+        "core",
+        "full"
+      ]
+    },
+    "boundaries": {
+      "href": "../../us-states.geojson",
+      "title": "US state boundaries",
+      "type": "application/geo+json",
+      "roles": [
+        "data"
+      ],
+      "file:size": 89263,
+      "file:checksum": "sha256:6f23ed91fce2c25d57c01d83225342ba40258e9571c486c3999bd827c80d193b",
+      "hurricanemap:source_url": "https://www.census.gov/geographies/mapping-files/time-series/geo/carto-boundary-file.html",
+      "hurricanemap:source_date": "2026-05-03",
+      "hurricanemap:license": "public-domain",
+      "hurricanemap:distribution": [
+        "core",
+        "full"
+      ]
+    },
+    "sources": {
+      "href": "../../hurdat2-sources.json",
+      "title": "HURDAT2 source lock",
+      "type": "application/json",
+      "roles": [
+        "data"
+      ],
+      "file:size": 841,
+      "file:checksum": "sha256:dfeb522b8f39cac235daa8b893df022d563882c05e8d0c21f932f4a587d49f23",
+      "hurricanemap:source_url": "https://www.nhc.noaa.gov/data/hurdat/",
+      "hurricanemap:source_date": "2026-02-27",
+      "hurricanemap:license": "public-domain",
+      "hurricanemap:distribution": [
+        "core",
+        "full"
+      ]
+    },
+    "coverage": {
+      "href": "../../coverage.json",
+      "title": "Dataset archive coverage",
+      "type": "application/json",
+      "roles": [
+        "data"
+      ],
+      "file:size": 16926,
+      "file:checksum": "sha256:4374211cfa62e4bc8cfcfa3e1fbc09be3bbddea591fe1534f0600e7200bbafaf",
+      "hurricanemap:source_url": "https://github.com/SysAdminDoc/HurricaneMap",
+      "hurricanemap:source_date": "2026-08-08",
+      "hurricanemap:license": "public-domain",
+      "hurricanemap:distribution": [
+        "core",
+        "full"
+      ]
+    }
+  }
+}
