@@ -214,6 +214,7 @@ function ensureViewer(Cesium, background) {
   } catch { /* imagery is optional; keep the base colour */ }
   viewer.scene.globe.showGroundAtmosphere = true;
   viewer.scene.skyAtmosphere.show = true;
+  window.__hmGlobeViewer = viewer;
   viewer.scene.requestRenderMode = true;
   viewer.scene.maximumRenderTimeChange = Infinity;
 }
