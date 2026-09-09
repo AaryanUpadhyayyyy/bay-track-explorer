@@ -163,8 +163,18 @@ function loadCesium() {
     script.integrity = 'sha384-1G42k2yKVnUMrgZBHAlf+pQXOrpQdoo/lqzpebarn4Wamb2UgdZSZWtWEYfVP3sO';
     script.crossOrigin = 'anonymous';
     script.async = true;
-    script.onload = () => window.Cesium ? resolve(window.Cesium) : reject(new Error('Cesium global missing'));
+    // Without a deadline a stalled CDN leaves the panel on "loading" forever.
+    const timer = setTimeout(() => {
+      cesiumPromise = null;
+      reject(new Error('3D engine took too long to load'));
+    }, ENGINE_TIMEOUT_MS);
+    script.onload = () => {
+      clearTimeout(timer);
+      if (window.Cesium) resolve(window.Cesium);
+      else { cesiumPromise = null; reject(new Error('Cesium global missing')); }
+    };
     script.onerror = () => {
+      clearTimeout(timer);
       cesiumPromise = null;
       reject(new Error('Cesium CDN failed to load'));
     };
