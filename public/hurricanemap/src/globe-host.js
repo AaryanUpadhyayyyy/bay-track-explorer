@@ -214,7 +214,6 @@ function ensureViewer(Cesium, background) {
   } catch { /* imagery is optional; keep the base colour */ }
   viewer.scene.globe.showGroundAtmosphere = true;
   viewer.scene.skyAtmosphere.show = true;
-  window.__hmGlobeViewer = viewer;
   // On-demand rendering starved imagery tile loading and froze camera flights,
   // leaving a black sphere, so the globe renders continuously while open.
   viewer.scene.requestRenderMode = false;
