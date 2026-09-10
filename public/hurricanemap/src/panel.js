@@ -269,7 +269,7 @@ function render(storm, landfall, allStorms, advisoryReplay = null, renderSeq = s
       <h2 id="storm-panel-title">${escapeHtml(heading)}</h2>
       <div class="meta-row">
         <span class="cat-pill ${categoryClass(lfCat)}">${t('panel.catAtLandfall', lfLabel)}</span>
-        <span>${t('panel.peakIntensityLabel')} <strong>${peakLabel} ${storm.peak_wind_kt} kt</strong></span>
+        <span>${t('panel.peakIntensityLabel')} <strong>${peakLabel}${Number.isFinite(storm.peak_wind_kt) ? ` ${storm.peak_wind_kt} kt` : ''}</strong></span>
         <span>${storm.basin === 'AS' ? t('panel.basinArabianSea') : t('panel.basinBayOfBengal')}</span>
         <span>${escapeHtml(storm.id)}</span>
       </div>
@@ -315,9 +315,6 @@ function render(storm, landfall, allStorms, advisoryReplay = null, renderSeq = s
         </div>
 
         ${renderImpactsBlock(storm, impacts)}
-        <div class="storm-events-host" id="storm-events-host"></div>
-        <div class="rainfall-host" id="rainfall-host"></div>
-        <div class="tides-host" id="tides-host"></div>
       </section>
 
       <section class="storm-analysis-cluster" aria-label="${t('panel.analysisSection')}">
@@ -379,7 +376,6 @@ function render(storm, landfall, allStorms, advisoryReplay = null, renderSeq = s
           <p class="video-export-status" id="video-export-status" role="status" aria-live="polite"></p>
           <p class="video-export-unavailable" id="video-export-unavailable" role="status" hidden></p>
         </section>
-        <div id="forecast-skill-host"></div>
         <div id="track-timeline-host"></div>
         <section class="advisory-replay-control" aria-labelledby="advisory-replay-title">
           <div class="cone-retro-heading">
@@ -452,13 +448,12 @@ function render(storm, landfall, allStorms, advisoryReplay = null, renderSeq = s
 
         ${radiiCount(storm) > 0 ? `
           <div class="wind-field-row">
-            <label class="wf-toggle" title="Show HURDAT2 wind-radii swath (34/50/64 kt) along the track. Available for storms 2004+.">
+            <label class="wf-toggle" title="Show IBTrACS wind-radii swath (34/50/64 kt) along the track. Available for storms 2004+.">
               <input type="checkbox" id="wf-cb">
               <span>${t('panel.windSwathToggle', radiiCount(storm))}</span>
             </label>
           </div>
         ` : ''}
-        <div id="hwm-row-host"></div>
       </section>
     </div>
   `;
@@ -474,15 +469,8 @@ function render(storm, landfall, allStorms, advisoryReplay = null, renderSeq = s
   // Similar storms: compute top-5 neighbors and render.
   const similarStorms = findSimilarStorms(storm, allStorms, 5);
   renderSimilarStorms(document.getElementById('similar-storms-host'), similarStorms, showStorm);
-  renderStormEventsSummary(document.getElementById('storm-events-host'), storm);
-  renderRainfallBlock(document.getElementById('rainfall-host'), storm);
-  renderHwmRow(document.getElementById('hwm-row-host'), storm);
   renderTrackTimeline(document.getElementById('track-timeline-host'), storm);
-  renderForecastSkill(document.getElementById('forecast-skill-host'), storm);
   refreshRadarCacheStatus(storm.id);
-  import('./tides.js')
-    .then(({ renderTidesBlock }) => renderTidesBlock(document.getElementById('tides-host'), storm))
-    .catch(() => { /* tide gauges are optional context */ });
 
   wirePanelControls({
     panel,

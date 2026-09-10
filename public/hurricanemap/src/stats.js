@@ -77,8 +77,6 @@ function render() {
       ${t('stats.coverageRange', stats.year_range[0], stats.year_range[1])}
     </p>
 
-    <div id="seasonal-outlook-host"></div>
-
     <div class="stats-panel-layout">
       <div class="stats-panel-column stats-panel-column--counts">
         <section class="stats-section stats-section--states">
@@ -95,8 +93,8 @@ function render() {
           <h3>${t('stats.noHitStates')}</h3>
           <div class="cold-list">${cold || `<span class="cold-tag">${t('stats.noColdStates')}</span>`}</div>
           <p class="stats-note">
-            Tropical storms have hit these states; only Cat 1+ direct landfalls are excluded here.
-            HURDAT2's 1971-1990 continental-U.S. landfall markings have known gaps.
+            Landfalls here are detected geometrically from IBTrACS six-hourly positions,
+            so brief crossings between synoptic times can be missed.
           </p>
         </section>
         <section class="stats-section stats-section--impact-coverage">
