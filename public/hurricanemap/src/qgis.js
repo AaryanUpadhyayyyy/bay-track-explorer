@@ -110,7 +110,7 @@ export function buildQGISGeoJSON({
       exported_at: exportedAt,
       source: 'CycloneMap - NOAA NHC HURDAT2 Best-Track Database',
       license: 'Public Domain (NOAA/NHC)',
-      attribution: 'Data from NOAA National Hurricane Center HURDAT2 best-track database, 1851-present',
+      attribution: 'Data from NOAA NCEI IBTrACS, North Indian Ocean basin (IMD best tracks), 1842-present',
       citation: {
         apa: citation.apa,
         bibtex: citation.bibtex,
