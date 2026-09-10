@@ -5,46 +5,46 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#11111b" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://tile.openstreetmap.org https://*.tile.openstreetmap.org https://tiles.arcgis.com https://cdn.star.nesdis.noaa.gov https://mesonet.agron.iastate.edu https://pae-paha.pacioos.hawaii.edu; connect-src 'self' https://api.weather.gov https://api.tidesandcurrents.noaa.gov https://mapservices.weather.noaa.gov https://pae-paha.pacioos.hawaii.edu https://tile.openstreetmap.org https://*.tile.openstreetmap.org https://tiles.arcgis.com https://services9.arcgis.com https://services.arcgis.com https://geocode.arcgis.com https://cdn.star.nesdis.noaa.gov https://mesonet.agron.iastate.edu https://www.nhc.noaa.gov https://www.fema.gov; font-src 'self'; worker-src 'self' blob:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none';" />
-  <meta name="description" content="HurricaneMap: an interactive map of every U.S. hurricane landfall on record (1851-present), built from NOAA's HURDAT2 best-track database." />
-  <meta property="og:title" content="HurricaneMap: 174 Years of U.S. Hurricane Landfalls" />
-  <meta property="og:description" content="Interactive map of 595 storms and 759 landfall events drawn from NOAA's HURDAT2 database (1851-2025). Track animation, archived NEXRAD radar, storm comparison, and publication-ready exports." />
-  <meta property="og:image" content="https://sysadmindoc.github.io/HurricaneMap/example.png" />
-  <meta property="og:url" content="https://sysadmindoc.github.io/HurricaneMap/" />
+  <meta name="description" content="CycloneMap: an interactive map of every U.S. cyclone landfall on record (1851-present), built from NOAA's IBTrACS NI best-track database." />
+  <meta property="og:title" content="CycloneMap: 174 Years of U.S. Hurricane Landfalls" />
+  <meta property="og:description" content="Interactive map of 595 storms and 759 landfall events drawn from NOAA's IBTrACS NI database (1851-2025). Track animation, archived NEXRAD radar, storm comparison, and publication-ready exports." />
+  <meta property="og:image" content="https://sysadmindoc.github.io/CycloneMap/example.png" />
+  <meta property="og:url" content="https://sysadmindoc.github.io/CycloneMap/" />
   <meta property="og:type" content="website" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="HurricaneMap: 174 Years of U.S. Hurricane Landfalls" />
-  <meta name="twitter:description" content="Interactive map of every recorded U.S. hurricane landfall (1851-2025) from NOAA HURDAT2." />
-  <meta name="twitter:image" content="https://sysadmindoc.github.io/HurricaneMap/example.png" />
-  <title>HurricaneMap: 174 Years of U.S. Hurricane Landfalls</title>
-  <link rel="canonical" href="https://sysadmindoc.github.io/HurricaneMap/" />
+  <meta name="twitter:title" content="CycloneMap: 174 Years of U.S. Hurricane Landfalls" />
+  <meta name="twitter:description" content="Interactive map of every recorded U.S. cyclone landfall (1851-2025) from IMD/IBTrACS." />
+  <meta name="twitter:image" content="https://sysadmindoc.github.io/CycloneMap/example.png" />
+  <title>CycloneMap: 174 Years of U.S. Hurricane Landfalls</title>
+  <link rel="canonical" href="https://sysadmindoc.github.io/CycloneMap/" />
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="alternate" type="application/json" title="HurricaneMap STAC catalog" href="data/stac/catalog.json" />
+  <link rel="alternate" type="application/json" title="CycloneMap STAC catalog" href="data/stac/catalog.json" />
   <script type="application/ld+json">
   {
     "@context": "https://schema.org/",
     "@type": "Dataset",
-    "name": "HurricaneMap: U.S. tropical cyclone landfalls, 1851-2025",
-    "alternateName": "HurricaneMap",
-    "description": "Every recorded U.S. hurricane and tropical-storm landfall derived from NOAA HURDAT2 Atlantic and Eastern North Pacific best-track data. 595 landfalling storms, 759 landfall events, 374 at hurricane strength, with per-storm tracks, intensity, archived NEXRAD radar, and publication-ready exports.",
-    "url": "https://sysadmindoc.github.io/HurricaneMap/",
-    "sameAs": "https://github.com/SysAdminDoc/HurricaneMap",
+    "name": "CycloneMap: U.S. tropical cyclone landfalls, 1851-2025",
+    "alternateName": "CycloneMap",
+    "description": "Every recorded U.S. hurricane and tropical-storm landfall derived from IMD/IBTrACS Atlantic and Eastern North Pacific best-track data. 595 landfalling storms, 759 landfall events, 374 at cyclone strength, with per-storm tracks, intensity, archived NEXRAD radar, and publication-ready exports.",
+    "url": "https://sysadmindoc.github.io/CycloneMap/",
+    "sameAs": "https://github.com/SysAdminDoc/CycloneMap",
     "license": "https://opensource.org/licenses/MIT",
-    "keywords": ["hurricane", "tropical cyclone", "landfall", "HURDAT2", "NOAA", "United States", "storm track"],
+    "keywords": ["hurricane", "tropical cyclone", "landfall", "IBTrACS NI", "NOAA", "United States", "storm track"],
     "temporalCoverage": "1851/2025",
     "spatialCoverage": { "@type": "Place", "name": "United States, including Puerto Rico, the U.S. Virgin Islands and Hawaii" },
     "creator": { "@type": "Organization", "name": "SysAdminDoc", "url": "https://github.com/SysAdminDoc" },
     "isBasedOn": {
       "@type": "Dataset",
-      "name": "NOAA HURDAT2 Atlantic hurricane database",
+      "name": "IMD/IBTrACS Atlantic hurricane database",
       "url": "https://www.nhc.noaa.gov/data/hurdat/hurdat2-1851-2025-02272026.txt",
       "datePublished": "2026-02-27",
       "creator": { "@type": "Organization", "name": "NOAA National Hurricane Center" }
     },
     "citation": "Landsea, C. W., and J. L. Franklin, 2013: Atlantic Hurricane Database Uncertainty and Presentation of a New Database Format. Mon. Wea. Rev., 141, 3576-3592.",
     "distribution": [
-      { "@type": "DataDownload", "encodingFormat": "application/json", "contentUrl": "https://sysadmindoc.github.io/HurricaneMap/data/landfalls.json", "name": "Landfall events" },
-      { "@type": "DataDownload", "encodingFormat": "application/json", "contentUrl": "https://sysadmindoc.github.io/HurricaneMap/data/storms.json", "name": "Storm tracks" },
-      { "@type": "DataDownload", "encodingFormat": "application/json", "contentUrl": "https://sysadmindoc.github.io/HurricaneMap/data/stac/catalog.json", "name": "STAC 1.1.0 catalog" }
+      { "@type": "DataDownload", "encodingFormat": "application/json", "contentUrl": "https://sysadmindoc.github.io/CycloneMap/data/landfalls.json", "name": "Landfall events" },
+      { "@type": "DataDownload", "encodingFormat": "application/json", "contentUrl": "https://sysadmindoc.github.io/CycloneMap/data/storms.json", "name": "Storm tracks" },
+      { "@type": "DataDownload", "encodingFormat": "application/json", "contentUrl": "https://sysadmindoc.github.io/CycloneMap/data/stac/catalog.json", "name": "STAC 1.1.0 catalog" }
     ]
   }
   </script>
@@ -98,8 +98,8 @@
       <h1>CycloneMap</h1>
       <p>
         An interactive atlas of every recorded U.S. hurricane and tropical-storm landfall from 1851 to 2025,
-        built from NOAA's HURDAT2 best-track database (revision of 27 February 2026). It covers 595 landfalling
-        storms and 759 landfall events, 374 of them at hurricane strength.
+        built from NOAA's IBTrACS NI best-track database (revision of 27 February 2026). It covers 595 landfalling
+        storms and 759 landfall events, 374 of them at cyclone strength.
       </p>
       <p>The map itself needs JavaScript, but the underlying data does not. You can read it directly:</p>
       <ul>
@@ -109,7 +109,7 @@
         <li><a href="data/stats.json">stats.json</a>: totals by state, decade and category</li>
         <li><a href="data/metadata.json">metadata.json</a>: source files, revision dates and checksums</li>
         <li><a href="data/stac/catalog.json">STAC 1.1.0 catalog</a>: machine-readable dataset discovery</li>
-        <li><a href="https://github.com/SysAdminDoc/HurricaneMap">Source code and documentation on GitHub</a></li>
+        <li><a href="https://github.com/SysAdminDoc/CycloneMap">Source code and documentation on GitHub</a></li>
       </ul>
       <p>
         Cite the underlying database as Landsea, C. W., and J. L. Franklin, 2013: Atlantic Hurricane Database
@@ -122,7 +122,7 @@
     <img class="brand-mark" src="branding/favicon.png" alt="" aria-hidden="true" />
     <div class="title-block">
       <h1 data-i18n="header.title">CycloneMap</h1>
-      <p class="subtitle"><span data-i18n="header.subtitle">174 years of U.S. landfalls</span></p>
+      <p class="subtitle"><span data-i18n="header.subtitle">183 years of Indian landfalls</span></p>
     </div>
     <div class="header-actions" aria-label="View controls" data-i18n-aria-label="app.viewControls" tabindex="0" aria-keyshortcuts="ArrowLeft ArrowRight Home End">
       <button class="icon-btn" id="toggle-filters" title="Filters" aria-label="Filters" data-i18n-title="header.btn.filters" data-i18n-aria-label="header.btn.filters" aria-controls="filters" aria-expanded="true">
@@ -190,7 +190,7 @@
           <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7zm0 10.5A3.5 3.5 0 1 1 12 5a3.5 3.5 0 0 1 0 7.5zm-1-5h2v3h-2v-3zm0 4h2v2h-2v-2z"/></svg>
           <span class="mobile-action-label" data-i18n="header.btn.evac">Evacuation zones</span>
         </button>
-        <button class="icon-btn" id="toggle-prep" title="Hurricane preparedness" aria-label="Hurricane preparedness" data-i18n-title="header.btn.prep" data-i18n-aria-label="header.btn.prep" aria-pressed="false" aria-controls="prep-panel">
+        <button class="icon-btn" id="toggle-prep" title="Cyclone preparedness" aria-label="Cyclone preparedness" data-i18n-title="header.btn.prep" data-i18n-aria-label="header.btn.prep" aria-pressed="false" aria-controls="prep-panel">
           <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M9 3h6a2 2 0 0 1 2 2v2h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h2V5a2 2 0 0 1 2-2zm0 4h6V5H9v2zm2 3v3H8v2h3v3h2v-3h3v-2h-3v-3h-2z"/></svg>
           <span class="mobile-action-label" data-i18n="header.btn.prep">Preparedness</span>
         </button>
@@ -344,16 +344,16 @@
   </header>
 
   <main id="main" tabindex="-1">
-  <div id="map" aria-label="Hurricane landfall map" data-i18n-aria-label="app.mapLabel" tabindex="-1"></div>
+  <div id="map" aria-label="Cyclone landfall map" data-i18n-aria-label="app.mapLabel" tabindex="-1"></div>
   <div id="map-announce" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
 
   <section class="atlas-context-rail glass" aria-label="Dataset context" data-i18n-aria-label="atlas.context">
     <span class="atlas-context-state"><span class="atlas-live-dot" aria-hidden="true"></span><span data-i18n="atlas.historical">Historical atlas</span></span>
     <span class="atlas-context-divider" aria-hidden="true"></span>
-    <span data-i18n="atlas.scope">U.S. landfalls</span>
+    <span data-i18n="atlas.scope">Indian landfalls</span>
     <span>1851–2025</span>
     <span class="atlas-context-count" id="storm-count">…</span>
-    <span class="atlas-context-source">NOAA HURDAT2</span>
+    <span class="atlas-context-source">IMD/IBTrACS</span>
   </section>
 
   <aside class="filters glass" id="filters" role="region" aria-label="Storm filters and search" data-i18n-aria-label="filters.region">
@@ -483,21 +483,21 @@
     <div id="table-view-body"></div>
   </section>
 
-  <section class="prep-panel glass" id="prep-panel" hidden role="region" aria-labelledby="prep-panel-title" aria-label="Hurricane preparedness" data-i18n-aria-label="prep.title">
-    <button class="close-btn" id="close-prep" aria-label="Close hurricane preparedness" data-i18n-aria-label="prep.close">×</button>
-    <h2 id="prep-panel-title" data-i18n="prep.title">Hurricane preparedness</h2>
+  <section class="prep-panel glass" id="prep-panel" hidden role="region" aria-labelledby="prep-panel-title" aria-label="Cyclone preparedness" data-i18n-aria-label="prep.title">
+    <button class="close-btn" id="close-prep" aria-label="Close cyclone preparedness" data-i18n-aria-label="prep.close">×</button>
+    <h2 id="prep-panel-title" data-i18n="prep.title">Cyclone preparedness</h2>
     <div id="prep-body"></div>
   </section>
 
   <section class="evac-panel glass" id="evac-panel" hidden role="region" aria-labelledby="evac-panel-title" aria-describedby="evac-disclosure" aria-label="Evacuation zone lookup" data-i18n-aria-label="evac.title">
     <button class="close-btn" id="close-evac" aria-label="Close evacuation zone lookup" data-i18n-aria-label="evac.close">×</button>
     <h2 id="evac-panel-title" data-i18n="evac.title">Evacuation zone lookup</h2>
-    <p class="visually-hidden" id="evac-disclosure" data-i18n="evac.disclosure">Privacy: typed addresses are sent to Esri's World Geocoding Service. The map-point option sends latitude/longitude only to Florida's ArcGIS zone layer; HurricaneMap stores neither.</p>
+    <p class="visually-hidden" id="evac-disclosure" data-i18n="evac.disclosure">Privacy: typed addresses are sent to Esri's World Geocoding Service. The map-point option sends latitude/longitude only to Florida's ArcGIS zone layer; CycloneMap stores neither.</p>
     <div id="evac-body"></div>
   </section>
 
   <section class="globe3d-panel" id="globe3d-panel" hidden role="dialog" aria-modal="true" aria-labelledby="globe3d-title" aria-describedby="globe3d-subtitle">
-    <iframe id="globe3d-frame" class="globe3d-canvas" src="globe.html" sandbox="allow-scripts" title="Interactive 3D hurricane track globe" data-i18n-title="globe.canvasLabel"></iframe>
+    <iframe id="globe3d-frame" class="globe3d-canvas" src="globe.html" sandbox="allow-scripts" title="Interactive 3D cyclone track globe" data-i18n-title="globe.canvasLabel"></iframe>
     <div class="globe3d-topbar glass">
       <div class="globe3d-heading">
         <h2 id="globe3d-title" data-i18n="globe.title">3D storm globe</h2>
@@ -541,17 +541,17 @@
   <section class="info-modal" id="info-modal" hidden role="dialog" aria-modal="true" aria-labelledby="info-modal-title">
     <div class="info-card glass">
       <button class="close-btn" id="close-info" aria-label="Close" data-i18n-aria-label="panel.close">×</button>
-      <h2 id="info-modal-title" data-i18n="about.title">About HurricaneMap</h2>
-      <p data-i18n="about.landfallsBody">Every dot is a recorded U.S. hurricane or tropical-storm landfall from NOAA HURDAT2.</p>
+      <h2 id="info-modal-title" data-i18n="about.title">About CycloneMap</h2>
+      <p data-i18n="about.landfallsBody">Every dot is a recorded Indian cyclone landfall from IMD/IBTrACS.</p>
       <h3 data-i18n="about.detectionTitle">How landfalls are detected</h3>
       <ul>
-        <li data-i18n-html="about.explicitHtml"><strong>Explicit:</strong> HURDAT2 records flagged with the <code>L</code> identifier.</li>
+        <li data-i18n-html="about.explicitHtml"><strong>Explicit:</strong> IBTrACS NI records flagged with the <code>L</code> identifier.</li>
         <li data-i18n-html="about.inferredHtml"><strong>Inferred:</strong> Tropical tracks that cross U.S. land without an <code>L</code> marker.</li>
         <li id="aoml-validation" data-i18n="about.aomlValidationLoading">Loading independent AOML ground-truth check…</li>
       </ul>
       <h3 data-i18n="about.gapsTitle">Known gaps in the source data</h3>
       <ul>
-        <li data-i18n-html="about.gapMarkingHtml">HURDAT2 has a 1971-1990 continental landfall-marker gap.</li>
+        <li data-i18n-html="about.gapMarkingHtml">IBTrACS NI has a 1971-1990 continental landfall-marker gap.</li>
         <li data-i18n="about.gapObservations">Early observing eras under-sample storms.</li>
         <li data-i18n="about.gapRadii">Wind radii are available only in recent years.</li>
       </ul>
@@ -589,11 +589,11 @@
         <li data-i18n="about.coverageOld">No radar archive is available before 1995.</li>
         <li data-i18n="about.coverageFallback">Missing local frames fall back to live IEM URLs.</li>
       </ul>
-      <p class="meta" data-i18n-html="about.sourcesHtml">Data: NOAA NHC HURDAT2. Radar: Iowa State IEM. Maps: OpenStreetMap.</p>
+      <p class="meta" data-i18n-html="about.sourcesHtml">Data: IMD/IBTrACS North Indian Ocean. Radar: Iowa State IEM. Maps: OpenStreetMap.</p>
     </div>
   </section>
 
-  <div class="loading" id="loading" role="status" aria-live="polite" aria-label="Loading HurricaneMap data" data-i18n-aria-label="loading.label">
+  <div class="loading" id="loading" role="status" aria-live="polite" aria-label="Loading CycloneMap data" data-i18n-aria-label="loading.label">
     <div class="spinner" aria-hidden="true">
       <svg class="hurricane-icon" viewBox="0 0 24 24" width="42" height="42" fill="none" stroke="currentColor" stroke-width="1.5">
         <!-- Outer spiral -->
@@ -605,7 +605,7 @@
         <circle cx="12" cy="12" r="2" fill="currentColor" opacity="0.8" />
       </svg>
     </div>
-    <p data-i18n="loading.body">Charting 174 years of Atlantic and Pacific landfalls…</p>
+    <p data-i18n="loading.body">Charting 183 years of Atlantic and Pacific landfalls…</p>
   </div>
 
   <!-- Keyboard shortcuts palette -->
