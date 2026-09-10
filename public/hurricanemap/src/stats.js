@@ -168,24 +168,9 @@ function render() {
     });
   }
 
-  // Fetch and render the current NOAA seasonal outlook
-  const outlookHost = document.getElementById('seasonal-outlook-host');
-  if (outlookHost) {
-    const renderSeasonal = async () => {
-      const generation = ++seasonalRenderGeneration;
-      seasonalStatusCleanup();
-      const outlook = await fetchSeasonalOutlook();
-      if (!outlookHost.isConnected || generation !== seasonalRenderGeneration) return;
-      outlookHost.innerHTML = renderOutlookBanner(outlook);
-      const statusHost = outlookHost.querySelector('[data-feed-status="seasonal"]');
-      seasonalStatusCleanup = mountOptionalFeedStatus(statusHost, 'seasonal', { onRetry: renderSeasonal });
-    };
-    renderSeasonal().catch(e => {
-      console.error('Seasonal outlook error:', e);
-      seasonalStatusCleanup();
-      outlookHost.innerHTML = '';
-    });
-  }
+  // The NOAA CPC / CSU seasonal outlook was an Atlantic-hurricane product and
+  // has no North Indian Ocean equivalent, so the card is no longer rendered.
+
 }
 
 function renderImpactCoverage(coverage) {
