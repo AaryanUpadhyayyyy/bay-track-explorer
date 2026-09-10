@@ -68,7 +68,7 @@ export function buildDataUrl(stationId, product, landfallIso) {
   const end = new Date(center.getTime() + WINDOW_HOURS * 3600_000);
   const params = new URLSearchParams({
     product,
-    application: 'HurricaneMap',
+    application: 'CycloneMap',
     begin_date: yyyymmdd(begin),
     end_date: yyyymmdd(end),
     datum: 'MLLW',

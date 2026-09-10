@@ -18,7 +18,7 @@ import {
 // records with `t` ISO timestamp, `wind` kt, `pres` mb, `lat`, `lon`), they
 // compute a single derived value or structured result. No side effects.
 //
-// Authored 2026-05-03 for HurricaneMap v0.4.0 to surface ACE, rapid
+// Authored 2026-05-03 for CycloneMap v0.4.0 to surface ACE, rapid
 // intensification windows, and closest-pass distances to U.S. coastal cities.
 
 const KM_TO_MI = 0.621371;
@@ -340,7 +340,7 @@ function exportCSVPublication(storm, citation = buildCitation()) {
   // Publication-ready CSV with metadata header and data dictionary
   const safeName = storm.name && storm.name !== 'UNNAMED' ? storm.name : 'Unnamed';
   const headerLines = [
-    `# HurricaneMap Publication Export`,
+    `# CycloneMap Publication Export`,
     `# Storm: ${safeName} (${storm.year})`,
     `# Storm ID: ${storm.id}`,
     `# Export Date: ${new Date().toISOString().split('T')[0]}`,
@@ -362,7 +362,7 @@ function exportCSVPublication(storm, citation = buildCitation()) {
     `# - Pre-1842 storms excluded; data spans 1842-${new Date().getFullYear()}`,
     `# - Landfalls include both explicit (L marker) and inferred detections`,
     `# - Pre-aircraft (pre-1944) and pre-satellite (pre-1960s) data are less complete`,
-    `# - For citations and complete methodology, see https://github.com/SysAdminDoc/HurricaneMap`,
+    `# - For citations and complete methodology, see https://github.com/SysAdminDoc/CycloneMap`,
     `#`,
     ...citationCommentLines(citation),
     `#`,
@@ -461,7 +461,7 @@ function exportKML(storm, citation = buildCitation()) {
 <kml xmlns="http://www.opengis.net/kml/2.2">
 <Document>
   <name>${xml(heading)} — track</name>
-  <description>HurricaneMap export. Source: NOAA HURDAT2.
+  <description>CycloneMap export. Source: NOAA HURDAT2.
 APA citation: ${xml(citation.apa)}
 BibTeX citation: ${xml(citation.bibtex)}</description>
   <Style id="trackStyle">

@@ -7,7 +7,7 @@
 //
 // The paths were also root-absolute, so a worker mounted under a project path
 // was missed as well: the browser asked https://host/nhc/... when the route was
-// at https://host/HurricaneMap/nhc/....
+// at https://host/CycloneMap/nhc/....
 
 // Takes the canonical worker route ('/nhc/CurrentStorms.json') and resolves it
 // against the document base. Outside a browser there is no base to resolve
@@ -24,7 +24,7 @@ export function nhcProxyUrl(route) {
 // a missing route would kill active-storm tracking for the rest of the page
 // load on a real worker deployment the first time an upstream file moved.
 // Every response the worker serves is tagged, so the tag tells them apart.
-const PROXY_RESPONSE_TAG = 'X-HurricaneMap-CDN';
+const PROXY_RESPONSE_TAG = 'X-CycloneMap-CDN';
 
 export function isMissingProxyRoute(response) {
   if (!response || response.status !== 404) return false;

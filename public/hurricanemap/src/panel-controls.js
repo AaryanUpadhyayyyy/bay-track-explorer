@@ -319,7 +319,7 @@ export function wirePanelControls({
       const url = window.location.href;
       if (navigator.share) {
         try {
-          await navigator.share({ title: 'HurricaneMap', url });
+          await navigator.share({ title: 'CycloneMap', url });
           return;
         } catch (error) {
           if (error.name === 'AbortError') return;

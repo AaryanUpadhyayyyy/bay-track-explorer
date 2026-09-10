@@ -82,7 +82,7 @@ export function buildPublicationCSV(filters, {
       'Wind speeds are converted from knots with mph = knots × 1.15078.',
     ],
   });
-  const dataDictionary = `# HurricaneMap Publication-Ready Export
+  const dataDictionary = `# CycloneMap Publication-Ready Export
 # Generated: ${generatedAt}
 # Data source: NOAA NHC HURDAT2 (Public Domain)
 # Attribution: "Data from NOAA National Hurricane Center HURDAT2 best-track database, 1851-present"
@@ -134,7 +134,7 @@ ${citationCommentLines(citation).join('\n')}
   const timestamp = generatedAt.split('T')[0];
   return {
     csv,
-    filename: `HurricaneMap-Export-${timestamp}.csv`,
+    filename: `CycloneMap-Export-${timestamp}.csv`,
     provenance,
     citation,
   };

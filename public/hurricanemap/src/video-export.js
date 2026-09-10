@@ -62,7 +62,7 @@ export function formatVideoFilename(storm) {
   const name = formatStormName(storm?.name, { unnamed: 'Unnamed' })
     .replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '') || 'storm';
   const year = Number.isInteger(Number(storm?.year)) ? `-${storm.year}` : '';
-  return `HurricaneMap-${name}${year}-track.webm`;
+  return `CycloneMap-${name}${year}-track.webm`;
 }
 
 export function sampleTrack(track, progress) {
@@ -357,7 +357,7 @@ function drawAttribution(context, width, height) {
   context.fillStyle = '#6c7086';
   context.font = '500 12px Inter, Segoe UI, sans-serif';
   context.textAlign = 'right';
-  context.fillText('NOAA/NHC HURDAT2 best-track data · HurricaneMap', width - EXPORT_PADDING.right, height - 18);
+  context.fillText('NOAA/NHC HURDAT2 best-track data · CycloneMap', width - EXPORT_PADDING.right, height - 18);
   context.textAlign = 'left';
 }
 

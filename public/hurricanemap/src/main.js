@@ -1,4 +1,4 @@
-// HurricaneMap entry point.
+// CycloneMap entry point.
 import {
   loadInitial, ensureOptionalData, getLandfalls, getStats, getMetadata, filterLandfalls,
 } from './data.js';

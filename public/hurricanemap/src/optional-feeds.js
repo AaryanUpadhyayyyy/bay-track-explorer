@@ -15,7 +15,7 @@ export const OPTIONAL_FEED_DEFINITIONS = Object.freeze({
   'wind-context': { labelKey: 'feeds.windContext', source: 'NOAA NHC tropical weather summary GIS' },
   seasonal: { labelKey: 'feeds.seasonal', source: 'NOAA CPC bundled outlook snapshot' },
   population: { labelKey: 'feeds.population', source: 'SEDAC GPWv4 population-density tiles' },
-  glossary: { labelKey: 'feeds.glossary', source: 'HurricaneMap bundled glossary' },
+  glossary: { labelKey: 'feeds.glossary', source: 'CycloneMap bundled glossary' },
   sst: { labelKey: 'feeds.sst', source: 'PacIOOS CoralTemp sea-surface temperature' },
   hwm: { labelKey: 'feeds.hwm', source: 'USGS high-water marks' },
   'storm-events': { labelKey: 'feeds.stormEvents', source: 'NOAA NCEI Storm Events' },

@@ -24,7 +24,7 @@ function isRetired(name, year) {
   return Array.isArray(years) && years.includes(year);
 }
 
-// Data loading + indexes for HurricaneMap.
+// Data loading + indexes for CycloneMap.
 // landfalls.json — flat list of every US landfall event (one per L marker).
 // storms.json    — full track + metadata, keyed by storm id.
 // stats.json     — pre-computed roll-ups (by state, decade, year, category).

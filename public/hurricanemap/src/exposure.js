@@ -1,6 +1,6 @@
 // Population exposure screening estimate.
 //
-// HurricaneMap does not ship a bulky gridded population raster. This module
+// CycloneMap does not ship a bulky gridded population raster. This module
 // combines HURDAT2 wind-radii geometry near U.S. landfall times with the
 // state-density attributes already bundled in data/us-states.geojson. Treat
 // the result as a first-pass planning metric, not a census-block exposure

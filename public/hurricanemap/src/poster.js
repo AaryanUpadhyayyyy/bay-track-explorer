@@ -208,7 +208,7 @@ export async function downloadPosterPng() {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `HurricaneMap-tracks-${latest.filters.yearMin || 1842}-${latest.filters.yearMax || 2025}.png`;
+  link.download = `CycloneMap-tracks-${latest.filters.yearMin || 1842}-${latest.filters.yearMax || 2025}.png`;
   document.body.appendChild(link);
   link.click();
   link.remove();
