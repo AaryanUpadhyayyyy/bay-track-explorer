@@ -221,7 +221,7 @@ export function getAomlValidation() {
 }
 
 export function getCoverageYearRange(metadata = DATA.metadata, {
-  fallbackMin = 1851,
+  fallbackMin = 1842,
   fallbackMax = 2025,
 } = {}) {
   const range = metadata?.coverage?.year_range;

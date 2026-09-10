@@ -359,7 +359,7 @@ function exportCSVPublication(storm, citation = buildCitation()) {
     `#`,
     `# METHODOLOGY`,
     `# - Wind speed categories use operational Saffir-Simpson thresholds (1971+)`,
-    `# - Pre-1851 storms excluded; data spans 1851-${new Date().getFullYear()}`,
+    `# - Pre-1842 storms excluded; data spans 1842-${new Date().getFullYear()}`,
     `# - Landfalls include both explicit (L marker) and inferred detections`,
     `# - Pre-aircraft (pre-1944) and pre-satellite (pre-1960s) data are less complete`,
     `# - For citations and complete methodology, see https://github.com/SysAdminDoc/HurricaneMap`,

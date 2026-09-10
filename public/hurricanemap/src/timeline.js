@@ -12,7 +12,7 @@ let onChange = null;
 let collapsed = false;
 let lastVisible = []; // memoize so we don't repaint on identical state
 
-let Y0 = 1851;
+let Y0 = 1842;
 let Y1 = 2025;
 let selectedMin = Y0;
 let selectedMax = Y1;

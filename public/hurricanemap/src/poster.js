@@ -76,7 +76,7 @@ export function posterColor(wind, light = false) {
 }
 
 function filterLabel(filters, stormCount) {
-  const start = Number(filters?.yearMin) || 1851;
+  const start = Number(filters?.yearMin) || 1842;
   const end = Number(filters?.yearMax) || 2025;
   const parts = [t('poster.years', start, end)];
   if (filters?.state) parts.push(String(filters.state));
@@ -208,7 +208,7 @@ export async function downloadPosterPng() {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `HurricaneMap-tracks-${latest.filters.yearMin || 1851}-${latest.filters.yearMax || 2025}.png`;
+  link.download = `HurricaneMap-tracks-${latest.filters.yearMin || 1842}-${latest.filters.yearMax || 2025}.png`;
   document.body.appendChild(link);
   link.click();
   link.remove();
