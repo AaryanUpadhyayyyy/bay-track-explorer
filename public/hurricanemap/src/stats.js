@@ -5,14 +5,10 @@ import { hidePanel, showPanel } from './panels.js';
 import { renderClimatologyChart } from './climatology.js';
 import { renderDecadeTrends } from './decade-trends.js';
 import { computeClimateTrends } from './metrics.js';
-import { fetchSeasonalOutlook, renderOutlookBanner } from './seasonal-outlook.js';
 import { escapeHtml } from './html-utils.js';
 import { presentCategory } from './metric-presenters.js';
 import { summarizeImpactCoverage } from './impact-coverage.js';
-import { mountOptionalFeedStatus } from './optional-feed-ui.js';
 
-let seasonalStatusCleanup = () => {};
-let seasonalRenderGeneration = 0;
 
 const panel = document.getElementById('stats-panel');
 const body = document.getElementById('stats-body');

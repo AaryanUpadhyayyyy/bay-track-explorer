@@ -34,12 +34,10 @@ import {
   wikipediaUrl,
   youtubeUrl,
 } from './panel-impacts.js';
-import { renderStormEventsSummary } from './storm-events.js';
 import { clearRetrospectiveCone } from './cone-retro.js';
 import { clearAdvisoryReplay } from './advisory-replay.js';
 import { clearRiskTrajectories } from './art-mode.js';
 import { presentPressure, MISSING_METRIC } from './metric-presenters.js';
-import { renderForecastSkill } from './forecast-skill.js';
 import { formatClosest, wirePanelControls } from './panel-controls.js';
 import { renderDaysAtIntensity, renderSimilarStorms } from './panel-analysis.js';
 import { renderTrackTimeline } from './table-view.js';
