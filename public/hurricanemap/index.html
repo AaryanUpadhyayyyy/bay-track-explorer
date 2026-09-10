@@ -5,17 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#11111b" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://tile.openstreetmap.org https://*.tile.openstreetmap.org https://tiles.arcgis.com https://cdn.star.nesdis.noaa.gov https://mesonet.agron.iastate.edu https://pae-paha.pacioos.hawaii.edu; connect-src 'self' https://api.weather.gov https://api.tidesandcurrents.noaa.gov https://mapservices.weather.noaa.gov https://pae-paha.pacioos.hawaii.edu https://tile.openstreetmap.org https://*.tile.openstreetmap.org https://tiles.arcgis.com https://services9.arcgis.com https://services.arcgis.com https://geocode.arcgis.com https://cdn.star.nesdis.noaa.gov https://mesonet.agron.iastate.edu https://www.nhc.noaa.gov https://www.fema.gov; font-src 'self'; worker-src 'self' blob:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none';" />
-  <meta name="description" content="CycloneMap: an interactive map of every U.S. cyclone landfall on record (1851-present), built from NOAA's IBTrACS NI best-track database." />
-  <meta property="og:title" content="CycloneMap: 174 Years of U.S. Hurricane Landfalls" />
-  <meta property="og:description" content="Interactive map of 595 storms and 759 landfall events drawn from NOAA's IBTrACS NI database (1851-2025). Track animation, archived NEXRAD radar, storm comparison, and publication-ready exports." />
+  <meta name="description" content="CycloneMap: an interactive atlas of North Indian Ocean tropical cyclones (1842-2025) and their Indian landfalls, built from IMD best-track data via IBTrACS." />
+  <meta property="og:title" content="CycloneMap: 183 Years of Bay of Bengal and Arabian Sea Cyclones" />
+  <meta property="og:description" content="Interactive map of 1,817 North Indian Ocean cyclones and 1,264 Indian landfall events (1842-2025). Track animation, storm comparison, coastal district stats, and publication-ready exports." />
   <meta property="og:image" content="https://sysadmindoc.github.io/CycloneMap/example.png" />
   <meta property="og:url" content="https://sysadmindoc.github.io/CycloneMap/" />
   <meta property="og:type" content="website" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="CycloneMap: 174 Years of U.S. Hurricane Landfalls" />
-  <meta name="twitter:description" content="Interactive map of every recorded U.S. cyclone landfall (1851-2025) from IMD/IBTrACS." />
+  <meta name="twitter:title" content="CycloneMap: 183 Years of Bay of Bengal and Arabian Sea Cyclones" />
+  <meta name="twitter:description" content="Interactive map of every recorded Indian cyclone landfall (1842-2025) from IMD best-track data via IBTrACS." />
   <meta name="twitter:image" content="https://sysadmindoc.github.io/CycloneMap/example.png" />
-  <title>CycloneMap: 174 Years of U.S. Hurricane Landfalls</title>
+  <title>CycloneMap: 183 Years of Bay of Bengal and Arabian Sea Cyclones</title>
   <link rel="canonical" href="https://sysadmindoc.github.io/CycloneMap/" />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="alternate" type="application/json" title="CycloneMap STAC catalog" href="data/stac/catalog.json" />
@@ -23,24 +23,23 @@
   {
     "@context": "https://schema.org/",
     "@type": "Dataset",
-    "name": "CycloneMap: U.S. tropical cyclone landfalls, 1851-2025",
+    "name": "CycloneMap: North Indian Ocean tropical cyclones and Indian landfalls, 1842-2025",
     "alternateName": "CycloneMap",
-    "description": "Every recorded U.S. hurricane and tropical-storm landfall derived from IMD/IBTrACS Atlantic and Eastern North Pacific best-track data. 595 landfalling storms, 759 landfall events, 374 at cyclone strength, with per-storm tracks, intensity, archived NEXRAD radar, and publication-ready exports.",
+    "description": "North Indian Ocean tropical cyclones (Bay of Bengal and Arabian Sea) with Indian landfall events, derived from India Meteorological Department best-track data distributed through NOAA NCEI IBTrACS. 1,817 storms and 1,264 landfall events, with per-storm tracks, intensity, coastal district attribution, and publication-ready exports.",
     "url": "https://sysadmindoc.github.io/CycloneMap/",
     "sameAs": "https://github.com/SysAdminDoc/CycloneMap",
     "license": "https://opensource.org/licenses/MIT",
-    "keywords": ["hurricane", "tropical cyclone", "landfall", "IBTrACS NI", "NOAA", "United States", "storm track"],
-    "temporalCoverage": "1851/2025",
-    "spatialCoverage": { "@type": "Place", "name": "United States, including Puerto Rico, the U.S. Virgin Islands and Hawaii" },
+    "keywords": ["cyclone", "tropical cyclone", "landfall", "Bay of Bengal", "Arabian Sea", "IBTrACS", "IMD", "India", "storm track"],
+    "temporalCoverage": "1842/2025",
+    "spatialCoverage": { "@type": "Place", "name": "North Indian Ocean, including the Bay of Bengal and the Arabian Sea" },
     "creator": { "@type": "Organization", "name": "SysAdminDoc", "url": "https://github.com/SysAdminDoc" },
     "isBasedOn": {
       "@type": "Dataset",
-      "name": "IMD/IBTrACS Atlantic hurricane database",
-      "url": "https://www.nhc.noaa.gov/data/hurdat/hurdat2-1851-2025-02272026.txt",
-      "datePublished": "2026-02-27",
-      "creator": { "@type": "Organization", "name": "NOAA National Hurricane Center" }
+      "name": "IBTrACS North Indian Ocean best-track archive (IMD agency data)",
+      "url": "https://www.ncei.noaa.gov/data/international-best-track-archive-for-climate-stewardship-ibtracs/v04r01/access/csv/ibtracs.NI.list.v04r01.csv",
+      "creator": { "@type": "Organization", "name": "NOAA NCEI / India Meteorological Department" }
     },
-    "citation": "Landsea, C. W., and J. L. Franklin, 2013: Atlantic Hurricane Database Uncertainty and Presentation of a New Database Format. Mon. Wea. Rev., 141, 3576-3592.",
+    "citation": "Knapp, K. R., M. C. Kruk, D. H. Levinson, H. J. Diamond, and C. J. Neumann, 2010: The International Best Track Archive for Climate Stewardship (IBTrACS). Bull. Amer. Meteor. Soc., 91, 363-376.",
     "distribution": [
       { "@type": "DataDownload", "encodingFormat": "application/json", "contentUrl": "https://sysadmindoc.github.io/CycloneMap/data/landfalls.json", "name": "Landfall events" },
       { "@type": "DataDownload", "encodingFormat": "application/json", "contentUrl": "https://sysadmindoc.github.io/CycloneMap/data/storms.json", "name": "Storm tracks" },
@@ -48,6 +47,7 @@
     ]
   }
   </script>
+
   <link rel="icon" type="image/png" sizes="192x192" href="branding/logo-192.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="branding/apple-touch-icon.png" />
   <link rel="stylesheet" href="vendor/leaflet.css" />
