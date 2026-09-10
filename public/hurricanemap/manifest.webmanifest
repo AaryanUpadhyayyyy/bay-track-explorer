@@ -1,7 +1,7 @@
 {
-  "name": "HurricaneMap: U.S. Hurricane Landfalls 1851-Present",
-  "short_name": "HurricaneMap",
-  "description": "Interactive map of every U.S. hurricane landfall on record, drawn from NOAA's HURDAT2 database.",
+  "name": "CycloneMap: U.S. Hurricane Landfalls 1851-Present",
+  "short_name": "CycloneMap",
+  "description": "Interactive map of every U.S. cyclone landfall on record, drawn from NOAA's IBTrACS NI database.",
   "id": "./",
   "scope": "./",
   "lang": "en-US",

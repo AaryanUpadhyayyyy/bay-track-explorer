@@ -1,7 +1,7 @@
 import { URL_STATE_VERSION } from './schema-contract.js';
 import { getDataReleasePin } from './export-provenance.js';
 
-export const YEAR_FALLBACK_MIN = 1851;
+export const YEAR_FALLBACK_MIN = 1842;
 export const YEAR_FALLBACK_MAX = 2025;
 export const CATEGORY_DEFAULTS = Object.freeze(['ts', '1', '2', '3', '4', '5']);
 

@@ -115,7 +115,7 @@ export function buildTrackSVG(storm, { exportedAt = new Date().toISOString() } =
   <metadata id="hurricanemap-citation"><![CDATA[${citationJson}]]></metadata>
   <rect width="${SVG_W}" height="${SVG_H}" fill="#11111b"/>
   <text x="${PAD}" y="24" font-family="Inter, system-ui, sans-serif" font-size="16" font-weight="700" fill="#cdd6f4">${title}</text>
-  <text x="${PAD}" y="40" font-family="Inter, system-ui, sans-serif" font-size="10" fill="#6c7086">HURDAT2 best-track · HurricaneMap · NOAA/NHC</text>
+  <text x="${PAD}" y="40" font-family="Inter, system-ui, sans-serif" font-size="10" fill="#6c7086">HURDAT2 best-track · CycloneMap · NOAA/NHC</text>
   <g>
     ${trackLines}
   </g>

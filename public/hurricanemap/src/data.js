@@ -24,7 +24,7 @@ function isRetired(name, year) {
   return Array.isArray(years) && years.includes(year);
 }
 
-// Data loading + indexes for HurricaneMap.
+// Data loading + indexes for CycloneMap.
 // landfalls.json — flat list of every US landfall event (one per L marker).
 // storms.json    — full track + metadata, keyed by storm id.
 // stats.json     — pre-computed roll-ups (by state, decade, year, category).
@@ -221,7 +221,7 @@ export function getAomlValidation() {
 }
 
 export function getCoverageYearRange(metadata = DATA.metadata, {
-  fallbackMin = 1851,
+  fallbackMin = 1842,
   fallbackMax = 2025,
 } = {}) {
   const range = metadata?.coverage?.year_range;

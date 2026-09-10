@@ -108,9 +108,9 @@ export function buildQGISGeoJSON({
     features,
     metadata: {
       exported_at: exportedAt,
-      source: 'HurricaneMap - NOAA NHC HURDAT2 Best-Track Database',
+      source: 'CycloneMap - NOAA NHC HURDAT2 Best-Track Database',
       license: 'Public Domain (NOAA/NHC)',
-      attribution: 'Data from NOAA National Hurricane Center HURDAT2 best-track database, 1851-present',
+      attribution: 'Data from NOAA NCEI IBTrACS, North Indian Ocean basin (IMD best tracks), 1842-present',
       citation: {
         apa: citation.apa,
         bibtex: citation.bibtex,
@@ -238,7 +238,7 @@ function buildExportName(filters = {}, [yearMinDefault, yearMaxDefault] = getCov
       .join('');
     parts.push(`Cat${cats}`);
   }
-  return parts.length > 0 ? `HurricaneMap-${parts.join('-')}` : 'HurricaneMap-Export';
+  return parts.length > 0 ? `CycloneMap-${parts.join('-')}` : 'CycloneMap-Export';
 }
 
 function formatYearRange(filters = {}) {
@@ -258,7 +258,7 @@ export function downloadGeoJSON(geojson) {
   const url = URL.createObjectURL(blob);
 
   const timestamp = new Date().toISOString().split('T')[0];
-  const filename = `${geojson.name || 'HurricaneMap'}-${timestamp}.geojson`;
+  const filename = `${geojson.name || 'CycloneMap'}-${timestamp}.geojson`;
 
   link.setAttribute('href', url);
   link.setAttribute('download', filename);

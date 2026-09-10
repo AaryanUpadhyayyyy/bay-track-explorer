@@ -77,19 +77,19 @@ export function buildPublicationCSV(filters, {
     ],
     exportedAt: generatedAt,
     methodology: [
-      'Landfalls are the shipped NOAA/NHC HURDAT2-derived records selected by the supplied filters.',
+      'Landfalls are the shipped IBTrACS (IMD) derived records selected by the supplied filters.',
       'UTC month, day, and hour fields are derived from each record timestamp.',
       'Wind speeds are converted from knots with mph = knots × 1.15078.',
     ],
   });
-  const dataDictionary = `# HurricaneMap Publication-Ready Export
+  const dataDictionary = `# CycloneMap Publication-Ready Export
 # Generated: ${generatedAt}
-# Data source: NOAA NHC HURDAT2 (Public Domain)
-# Attribution: "Data from NOAA National Hurricane Center HURDAT2 best-track database, 1851-present"
+# Data source: IBTrACS v04r01, North Indian Ocean (IMD / RSMC New Delhi best tracks)
+# Attribution: "Data from NOAA NCEI IBTrACS, North Indian Ocean basin, IMD best-track agency, 1842-present"
 #
 # Data Dictionary:
-# storm_id: 6-character identifier (AALLNNNN: AL=Atlantic, LL=basin, NNNN=sequence, YYYY=year)
-# name: Hurricane or tropical storm name
+# storm_id: IBTrACS storm serial number
+# name: Cyclone or tropical storm name (IMD naming from 2004 onward)
 # year: Year of occurrence (${coverageMin}-${coverageMax})
 # month: Month (1-12)
 # day: Day of month
@@ -100,22 +100,22 @@ export function buildPublicationCSV(filters, {
 # wind_speed_mph: Maximum sustained winds (miles per hour) converted from knots * 1.15078
 # pressure_mb: Central pressure (millibars)
 # category: Tropical Depression (TD), Tropical Storm (TS), or Saffir-Simpson category 1-5
-# state: U.S. state at landfall
+# state: Indian state or union territory at landfall
 #
 # Methodology:
-# - Landfalls are identified as points where storm track crosses a U.S. state boundary
+# - Landfalls are identified as the first six-hourly position inside an Indian coastal district
 # - Category assigned by Saffir-Simpson scale: TS (34-63 kt), 1-5 (64-137+ kt)
 # - Wind speeds converted: mph = knots * 1.15078
-# - Pressure data sparse before 1945; see HURDAT2 documentation
+# - Wind and pressure data are sparse before the 1970s satellite era
 #
 # Citation:
-# Landsea, C. W., and J. L. Franklin, 2013: The Atlantic Hurricane Database Re-analysis Project:
-# Documentation for the 1851-2012 Alterations and Additions to the Hurdat Version 2 Database.
-# NOAA Technical Memorandum NWS NHC-7.
+# Knapp, K. R., et al., 2010: The International Best Track Archive for Climate
+# Stewardship (IBTrACS). Bull. Amer. Meteor. Soc., 91, 363-376. North Indian
+# Ocean tracks are contributed by IMD / RSMC New Delhi.
 #
 # License & Usage:
-# HURDAT2 data is Public Domain (released by NOAA/NHC).
-# This export provided as-is; please cite original HURDAT2 source in publications.
+# IBTrACS is distributed by NOAA NCEI without restriction.
+# This export provided as-is; please cite the original IBTrACS source in publications.
 #
 ${citationCommentLines(citation).join('\n')}
 #
@@ -134,7 +134,7 @@ ${citationCommentLines(citation).join('\n')}
   const timestamp = generatedAt.split('T')[0];
   return {
     csv,
-    filename: `HurricaneMap-Export-${timestamp}.csv`,
+    filename: `CycloneMap-Export-${timestamp}.csv`,
     provenance,
     citation,
   };

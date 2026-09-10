@@ -26,7 +26,7 @@ function addBasemap(targetMap) {
   // usage policy applies: this is a low-volume static atlas and the
   // attribution below is required.
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors | Hurricane data: <a href="https://www.nhc.noaa.gov/data/">NOAA HURDAT2</a>',
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors | Cyclone data: <a href="https://www.ncei.noaa.gov/products/international-best-track-archive">IBTrACS (IMD)</a>',
     maxZoom: 19,
     // CORS-loaded so the tile a visitor actually sees can be read back from a
     // canvas. A basemap that silently serves a placeholder still answers 200,

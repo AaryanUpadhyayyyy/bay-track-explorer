@@ -377,7 +377,7 @@ function exportComparisonCSV(storms) {
   const link = document.createElement('a');
   const objectUrl = URL.createObjectURL(blob);
   link.href = objectUrl;
-  link.download = `HurricaneMap-comparison-${new Date().toISOString().split('T')[0]}.csv`;
+  link.download = `CycloneMap-comparison-${new Date().toISOString().split('T')[0]}.csv`;
   link.style.display = 'none';
   document.body.appendChild(link);
   link.click();

@@ -2,7 +2,7 @@
 // module can query directly; other states remain labelled official link-outs
 // because their zone boundaries and lookup services are state/local specific.
 // Typed addresses go to Esri's World Geocoding Service; map-point checks send
-// only coordinates to Florida's zone layer, and HurricaneMap stores neither.
+// only coordinates to Florida's zone layer, and CycloneMap stores neither.
 
 import { escapeHtml, safeExternalUrl } from './html-utils.js';
 import { t } from './i18n.js';

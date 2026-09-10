@@ -2,7 +2,7 @@
 import { getDataReleaseCitationMetadata } from './export-provenance.js';
 
 const CITATION_SCHEMA_VERSION = 1;
-export const HURRICANEMAP_URL = 'https://sysadmindoc.github.io/HurricaneMap/';
+export const HURRICANEMAP_URL = 'https://sysadmindoc.github.io/CycloneMap/';
 
 function normalizeAccessDate(value) {
   if (value instanceof Date) {
@@ -36,8 +36,8 @@ export function buildCitation({ accessDate = new Date(), url = null } = {}) {
   const sourceHashes = sourceShaText(release.sources);
   const citationUrl = url || releaseUrl(release.release_pin);
   const sourceUrls = release.sources.map(source => source.source_url).join(', ');
-  const apa = `SysAdminDoc. (${year}). HurricaneMap: Interactive hurricane landfall atlas (version ${release.app_version}) [Data set and web application]. HURDAT2 revision ${revisionDate}; ${sourceHashes}. Retrieved ${accessed}, from ${citationUrl}`;
-  const bibtex = `@software{hurricanemap_${year},\n  author = {Parker, Matt},\n  title = {HurricaneMap: Interactive hurricane landfall atlas},\n  year = {${year}},\n  version = {${release.app_version}},\n  url = {${citationUrl}},\n  note = {HURDAT2 revision ${revisionDate}; ${sourceHashes}; accessed ${accessed}; source URLs: ${sourceUrls}}\n}`;
+  const apa = `SysAdminDoc. (${year}). CycloneMap: Interactive hurricane landfall atlas (version ${release.app_version}) [Data set and web application]. HURDAT2 revision ${revisionDate}; ${sourceHashes}. Retrieved ${accessed}, from ${citationUrl}`;
+  const bibtex = `@software{hurricanemap_${year},\n  author = {Parker, Matt},\n  title = {CycloneMap: Interactive hurricane landfall atlas},\n  year = {${year}},\n  version = {${release.app_version}},\n  url = {${citationUrl}},\n  note = {HURDAT2 revision ${revisionDate}; ${sourceHashes}; accessed ${accessed}; source URLs: ${sourceUrls}}\n}`;
   return {
     schema_version: CITATION_SCHEMA_VERSION,
     apa,

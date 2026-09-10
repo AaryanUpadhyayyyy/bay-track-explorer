@@ -18,7 +18,7 @@ import {
 // records with `t` ISO timestamp, `wind` kt, `pres` mb, `lat`, `lon`), they
 // compute a single derived value or structured result. No side effects.
 //
-// Authored 2026-05-03 for HurricaneMap v0.4.0 to surface ACE, rapid
+// Authored 2026-05-03 for CycloneMap v0.4.0 to surface ACE, rapid
 // intensification windows, and closest-pass distances to U.S. coastal cities.
 
 const KM_TO_MI = 0.621371;
@@ -340,7 +340,7 @@ function exportCSVPublication(storm, citation = buildCitation()) {
   // Publication-ready CSV with metadata header and data dictionary
   const safeName = storm.name && storm.name !== 'UNNAMED' ? storm.name : 'Unnamed';
   const headerLines = [
-    `# HurricaneMap Publication Export`,
+    `# CycloneMap Publication Export`,
     `# Storm: ${safeName} (${storm.year})`,
     `# Storm ID: ${storm.id}`,
     `# Export Date: ${new Date().toISOString().split('T')[0]}`,
@@ -359,10 +359,10 @@ function exportCSVPublication(storm, citation = buildCitation()) {
     `#`,
     `# METHODOLOGY`,
     `# - Wind speed categories use operational Saffir-Simpson thresholds (1971+)`,
-    `# - Pre-1851 storms excluded; data spans 1851-${new Date().getFullYear()}`,
+    `# - Pre-1842 storms excluded; data spans 1842-${new Date().getFullYear()}`,
     `# - Landfalls include both explicit (L marker) and inferred detections`,
     `# - Pre-aircraft (pre-1944) and pre-satellite (pre-1960s) data are less complete`,
-    `# - For citations and complete methodology, see https://github.com/SysAdminDoc/HurricaneMap`,
+    `# - For citations and complete methodology, see https://github.com/SysAdminDoc/CycloneMap`,
     `#`,
     ...citationCommentLines(citation),
     `#`,
@@ -461,7 +461,7 @@ function exportKML(storm, citation = buildCitation()) {
 <kml xmlns="http://www.opengis.net/kml/2.2">
 <Document>
   <name>${xml(heading)} — track</name>
-  <description>HurricaneMap export. Source: NOAA HURDAT2.
+  <description>CycloneMap export. Source: NOAA HURDAT2.
 APA citation: ${xml(citation.apa)}
 BibTeX citation: ${xml(citation.bibtex)}</description>
   <Style id="trackStyle">
@@ -975,7 +975,7 @@ export function generateStormBiography(storm, impacts) {
   const peakCat = windToCategory(storm.peak_wind_kt);
   let catDescriptor = 'tropical depression';
   if (peakCat >= 1 && peakCat <= 5) {
-    catDescriptor = ['Category 1', 'Category 2', 'Category 3', 'Category 4', 'Category 5'][peakCat - 1] + ' hurricane';
+    catDescriptor = ['Category 1', 'Category 2', 'Category 3', 'Category 4', 'Category 5'][peakCat - 1] + ' cyclone';
   } else if (peakCat === -1) {
     catDescriptor = 'tropical storm';
   }
@@ -985,24 +985,26 @@ export function generateStormBiography(storm, impacts) {
   const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   const genesisMonth = Number.isNaN(genesisDate.getTime()) ? '?' : (months[genesisDate.getUTCMonth()] || '?');
 
-  const firstLat = storm.track[0]?.lat || 0;
-  const firstLon = storm.track[0]?.lon || 0;
-  const stormBasin = String(storm.id || '').slice(0, 2).toUpperCase() || String(storm.basin || '').toUpperCase();
-  let region = 'the Atlantic basin';
-  if (stormBasin === 'CP') region = 'the central Pacific';
-  else if (stormBasin === 'EP') region = 'the eastern Pacific';
-  else if (firstLon < -80 && firstLat < 31) region = 'the Gulf of Mexico';
-  else if (firstLon < -70 && firstLat < 25) region = 'the Caribbean';
-  else if (firstLon < -70) region = 'the western Atlantic';
-  else if (firstLon < -30) region = 'the central Atlantic';
-  else region = 'off the African coast';
+  // North Indian Ocean sub-basins. IBTrACS records this basin's storms either
+  // side of the Indian peninsula, so longitude separates the two seas and the
+  // bundled basin flag wins when it is present.
+  const firstLat = storm.track[0]?.lat ?? 0;
+  const firstLon = storm.track[0]?.lon ?? 0;
+  const stormBasin = String(storm.basin || '').toUpperCase();
+  let region;
+  if (stormBasin === 'AS') region = 'the Arabian Sea';
+  else if (stormBasin === 'BB') region = 'the Bay of Bengal';
+  else if (firstLon < 78) region = 'the Arabian Sea';
+  else if (firstLat < 8) region = 'the southern Bay of Bengal';
+  else region = 'the Bay of Bengal';
   
-  // Landfall info
+  // Landfall info. The us_landfalls field name is inherited from the original
+  // schema; the records inside it are Indian coastal districts.
   const landfalls = Array.isArray(storm.us_landfalls) ? storm.us_landfalls : [];
   const landfallStates = [...new Set(landfalls.map(lf => lf.state).filter(Boolean))];
-  const landfallStr = landfalls.length === 0 ? 'did not make landfall' :
-    landfalls.length === 1 ? `made landfall in ${landfallStates[0] || 'the United States'}` :
-    `made ${landfalls.length} landfalls in ${landfallStates.join(', ') || 'the United States'}`;
+  const landfallStr = landfalls.length === 0 ? 'did not make landfall in India' :
+    landfalls.length === 1 ? `made landfall in ${landfallStates[0] || 'India'}` :
+    `made ${landfalls.length} landfalls in ${landfallStates.join(', ') || 'India'}`;
   
   // Impact info
   const impactSummary = formatBiographyImpacts(impacts);
@@ -1018,8 +1020,16 @@ export function generateStormBiography(storm, impacts) {
   
   const featureStr = features.length > 0 ? ` The storm ${features.join(', ')}.` : '';
   
+  // A great many pre-satellite NI tracks carry positions but no wind at all.
+  // Printing "peak intensity of null kt" read as a bug rather than as the
+  // missing measurement it is.
+  const intensityStr = Number.isFinite(storm.peak_wind_kt)
+    ? `, with peak intensity of ${storm.peak_wind_kt} kt`
+    : ', with no wind measurement on record';
+  
   // Assemble biography
-  return `${nameStr.toUpperCase()} (${yearStr}) was a ${catDescriptor} that formed in ${genesisMonth} in ${region} and ${landfallStr}, with peak intensity of ${storm.peak_wind_kt} kt${impactStr}.${featureStr}`;
+  return `${nameStr.toUpperCase()} (${yearStr}) was a ${catDescriptor} that formed in ${genesisMonth} over ${region} and ${landfallStr}${intensityStr}${impactStr}.${featureStr}`;
+
 }
 
 /** Format the optional impact clause shared by biography display and exports. */

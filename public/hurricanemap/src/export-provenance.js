@@ -26,7 +26,7 @@ const ARTIFACTS = Object.freeze({
     path: 'data/coverage.json',
     bytes: 16926,
     sha256: '4374211cfa62e4bc8cfcfa3e1fbc09be3bbddea591fe1534f0600e7200bbafaf',
-    source_url: 'https://github.com/SysAdminDoc/HurricaneMap',
+    source_url: 'https://github.com/SysAdminDoc/CycloneMap',
     source_date: '2026-08-08',
     schema_version: 1,
   }),

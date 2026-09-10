@@ -5,14 +5,10 @@ import { hidePanel, showPanel } from './panels.js';
 import { renderClimatologyChart } from './climatology.js';
 import { renderDecadeTrends } from './decade-trends.js';
 import { computeClimateTrends } from './metrics.js';
-import { fetchSeasonalOutlook, renderOutlookBanner } from './seasonal-outlook.js';
 import { escapeHtml } from './html-utils.js';
 import { presentCategory } from './metric-presenters.js';
 import { summarizeImpactCoverage } from './impact-coverage.js';
-import { mountOptionalFeedStatus } from './optional-feed-ui.js';
 
-let seasonalStatusCleanup = () => {};
-let seasonalRenderGeneration = 0;
 
 const panel = document.getElementById('stats-panel');
 const body = document.getElementById('stats-body');
@@ -77,8 +73,6 @@ function render() {
       ${t('stats.coverageRange', stats.year_range[0], stats.year_range[1])}
     </p>
 
-    <div id="seasonal-outlook-host"></div>
-
     <div class="stats-panel-layout">
       <div class="stats-panel-column stats-panel-column--counts">
         <section class="stats-section stats-section--states">
@@ -95,8 +89,8 @@ function render() {
           <h3>${t('stats.noHitStates')}</h3>
           <div class="cold-list">${cold || `<span class="cold-tag">${t('stats.noColdStates')}</span>`}</div>
           <p class="stats-note">
-            Tropical storms have hit these states; only Cat 1+ direct landfalls are excluded here.
-            HURDAT2's 1971-1990 continental-U.S. landfall markings have known gaps.
+            Landfalls here are detected geometrically from IBTrACS six-hourly positions,
+            so brief crossings between synoptic times can be missed.
           </p>
         </section>
         <section class="stats-section stats-section--impact-coverage">
@@ -170,24 +164,9 @@ function render() {
     });
   }
 
-  // Fetch and render the current NOAA seasonal outlook
-  const outlookHost = document.getElementById('seasonal-outlook-host');
-  if (outlookHost) {
-    const renderSeasonal = async () => {
-      const generation = ++seasonalRenderGeneration;
-      seasonalStatusCleanup();
-      const outlook = await fetchSeasonalOutlook();
-      if (!outlookHost.isConnected || generation !== seasonalRenderGeneration) return;
-      outlookHost.innerHTML = renderOutlookBanner(outlook);
-      const statusHost = outlookHost.querySelector('[data-feed-status="seasonal"]');
-      seasonalStatusCleanup = mountOptionalFeedStatus(statusHost, 'seasonal', { onRetry: renderSeasonal });
-    };
-    renderSeasonal().catch(e => {
-      console.error('Seasonal outlook error:', e);
-      seasonalStatusCleanup();
-      outlookHost.innerHTML = '';
-    });
-  }
+  // The NOAA CPC / CSU seasonal outlook was an Atlantic-hurricane product and
+  // has no North Indian Ocean equivalent, so the card is no longer rendered.
+
 }
 
 function renderImpactCoverage(coverage) {

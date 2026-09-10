@@ -7,7 +7,7 @@
 //
 // The paths were also root-absolute, so a worker mounted under a project path
 // was missed as well: the browser asked https://host/nhc/... when the route was
-// at https://host/HurricaneMap/nhc/....
+// at https://host/CycloneMap/nhc/....
 
 // Takes the canonical worker route ('/nhc/CurrentStorms.json') and resolves it
 // against the document base. Outside a browser there is no base to resolve

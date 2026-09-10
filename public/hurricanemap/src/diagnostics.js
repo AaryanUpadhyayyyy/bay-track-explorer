@@ -218,7 +218,7 @@ function downloadBundle(bundle, documentRef = document) {
   const url = URL.createObjectURL(new Blob([body], { type: 'application/json' }));
   const link = documentRef.createElement('a');
   link.href = url;
-  link.download = `HurricaneMap-support-${new Date().toISOString().slice(0, 10)}.json`;
+  link.download = `CycloneMap-support-${new Date().toISOString().slice(0, 10)}.json`;
   documentRef.body.appendChild(link);
   link.click();
   link.remove();

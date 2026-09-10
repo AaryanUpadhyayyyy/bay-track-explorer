@@ -149,7 +149,7 @@ function downloadJson(body) {
   const url = URL.createObjectURL(new Blob([body], { type: 'application/json' }));
   const link = document.createElement('a');
   link.href = url;
-  link.download = `HurricaneMap-saved-views-${new Date().toISOString().split('T')[0]}.json`;
+  link.download = `CycloneMap-saved-views-${new Date().toISOString().split('T')[0]}.json`;
   link.style.display = 'none';
   document.body.appendChild(link);
   link.click();
