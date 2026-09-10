@@ -1,570 +1,298 @@
-// Storm details panel + IMD / MOSDAC / Wikipedia quicklinks.
-import {
-  ensureStormsLoaded, ensureOptionalData, getStorm, categoryLabel, categoryClass,
-  formatTime, getImpactsFor, getAllStorms, windToCategory,
-} from './data.js';
-import { showTrack, clearFocusTrack, getMap } from './map.js';
-import { TrackAnimator } from './animation.js';
-import { RadarOverlay, getStormRadarFrames } from './radar.js';
-import { renderIntensityChart } from './chart.js';
-import { isPinned } from './compare.js';
-import { radiiCount, hideWindField } from './windfield.js';
-import { hwmInfo, showHwm, hideHwm } from './hwm.js';
-import { hidePanel, minimizePanel, restorePanel, showPanel } from './panels.js';
-import {
-  computeACE, findRapidIntensification, closestApproach,
-  COASTAL_CITIES, formatNumber,
-  findPressureFall, computeTranslationStats, kmhToMph,
-  findSimilarStorms, computeRIRiskScore, generateStormBiography,
-} from './metrics.js';
-import { formatWind, getSetting } from './settings.js';
-import { escapeHtml, formatStormName } from './html-utils.js';
+// Statistics panel: state hot/cold spots, decade trends, category mix.
 import { t } from './i18n.js';
-import {
-  ensureExposureDensitiesLoaded,
-  estimatePopulationExposure,
-  formatExposurePeople,
-  formatExposureTooltip,
-} from './exposure.js';
-import {
-  imdBestTrackUrl,
-  imdReportUrl,
-  mosdacSatelliteUrl,
-  renderImpactsBlock,
-  wikipediaUrl,
-  youtubeUrl,
-} from './panel-impacts.js';
-import { clearRetrospectiveCone } from './cone-retro.js';
-import { clearAdvisoryReplay } from './advisory-replay.js';
-import { clearRiskTrajectories } from './art-mode.js';
-import { presentPressure, MISSING_METRIC } from './metric-presenters.js';
-import { formatClosest, wirePanelControls } from './panel-controls.js';
-import { renderDaysAtIntensity, renderSimilarStorms } from './panel-analysis.js';
-import { renderTrackTimeline } from './table-view.js';
-import { fetchWithTimeout, REQUEST_TIMEOUT_MS } from './network.js';
-import { inspectRadarFrameCache } from './storage-manager.js';
-const panel = document.getElementById('storm-panel');
-const body = document.getElementById('panel-body');
-const stickyHeader = document.getElementById('panel-sticky-header');
-const closeBtn = document.getElementById('close-panel');
-let animator = null;
-function getAnimator() {
-  if (!animator) animator = new TrackAnimator(getMap());
-  return animator;
-}
-let playbackAutoMinimized = false;
-function enterPlaybackMapMode() {
-  if (!panel || panel.hidden) return;
-  playbackAutoMinimized = !panel.classList.contains('minimized');
-  minimizePanel('storm-panel');
-  document.body.classList.add('track-playback-active');
-}
+import { getStats, getAllStorms, getImpactsFor, ensureStormsLoaded } from './data.js';
+import { hidePanel, showPanel } from './panels.js';
+import { renderClimatologyChart } from './climatology.js';
+import { renderDecadeTrends } from './decade-trends.js';
+import { computeClimateTrends } from './metrics.js';
+import { fetchSeasonalOutlook, renderOutlookBanner } from './seasonal-outlook.js';
+import { escapeHtml } from './html-utils.js';
+import { presentCategory } from './metric-presenters.js';
+import { summarizeImpactCoverage } from './impact-coverage.js';
+import { mountOptionalFeedStatus } from './optional-feed-ui.js';
 
-function leavePlaybackMapMode({ restore = false } = {}) {
-  document.body.classList.remove('track-playback-active');
-  if (restore && playbackAutoMinimized && panel && !panel.hidden) {
-    restorePanel('storm-panel');
-  }
-  playbackAutoMinimized = false;
-}
-let radar = null;
-function getRadar() {
-  if (!radar) radar = new RadarOverlay(getMap());
-  return radar;
-}
-async function refreshRadarCacheStatus(stormId) {
-  const host = document.getElementById('radar-cache-status');
-  if (!host || host.dataset.stormId !== stormId) return;
-  try {
-    const frameSet = await getStormRadarFrames(stormId);
-    const state = await inspectRadarFrameCache(frameSet?.frames || []);
-    if (!host.isConnected || host.dataset.stormId !== stormId) return;
-    host.dataset.state = state.state;
-    if (state.state === 'complete') {
-      host.textContent = t('radar.cacheComplete', state.cached, state.total);
-    } else if (state.state === 'partial') {
-      host.textContent = t('radar.cachePartial', state.cached, state.total);
-    } else if (state.state === 'empty') {
-      host.textContent = t('radar.cacheEmpty', state.total);
-    } else {
-      host.textContent = t('radar.cacheUnavailable');
-    }
-  } catch {
-    if (host.isConnected && host.dataset.stormId === stormId) {
-      host.dataset.state = 'unavailable';
-      host.textContent = t('radar.cacheUnavailable');
-    }
-  }
-}
-// Everything the storm panel owns on the map. Its controls live inside the
-// panel, so anything still running once the panel is gone cannot be turned off:
-// the radar overlay kept its floating controls and the old storm's title, the
-// track animator kept its rAF loop, and the wind-field swath and high-water
-// marks stayed drawn over whichever panel had just opened.
-function stopStormOverlays() {
-  if (animator) animator.stop();
-  if (radar) radar.close();
-  hideWindField();
-  hideHwm();
-  clearRetrospectiveCone();
-  clearRiskTrajectories();
-  clearAdvisoryReplay();
-}
+let seasonalStatusCleanup = () => {};
+let seasonalRenderGeneration = 0;
+
+const panel = document.getElementById('stats-panel');
+const body = document.getElementById('stats-body');
+const closeBtn = document.getElementById('close-stats');
 
 closeBtn.addEventListener('click', () => {
-  // hidePanel dispatches hm-panel:hidden, and the handler below runs the
-  // overlay teardown, so only the parts unique to a real close belong here.
-  hidePanel('storm-panel');
-  document.dispatchEvent(new CustomEvent('storm-panel:close'));
+  hidePanel('stats-panel');
 });
-// Other managed panels hide the storm panel through panels.js. Keep map-owned
-// storm overlays tied to that panel rather than leaving orphaned geometry and
-// legends over the newly opened surface.
-let showStormSeq = 0;
-document.addEventListener('hm-panel:hidden', event => {
-  if (event.detail?.id !== 'storm-panel') return;
-  // Closing is as much a reason to abandon a render as opening a different
-  // storm is. A render still working through its awaits would otherwise finish
-  // into a panel nobody is looking at and leave its track drawn on the map.
-  showStormSeq += 1;
-  stopStormOverlays();
-  // The track belongs to the panel too. Only the close button used to clear it,
-  // so opening any other panel over the storm panel left its track behind on a
-  // map that no longer said which storm it was. Only the panel's own track:
-  // clearing the whole layer took the "show tracks" filter's lines with it.
-  clearFocusTrack();
-});
-export async function showStorm(landfall, { advisoryReplay = null } = {}) {
-  // Sequence guard: rapid marker clicks interleave across the awaits below
-  // (storms.json / exposure-index loads); only the latest click may render.
-  const seq = ++showStormSeq;
-  showPanel('storm-panel');
-  // Three places open this panel without going through the map's own click
-  // handler: On This Date, the state panel's storm list and the similar-storms
-  // rows. They left the URL describing whatever was open before, so the Share
-  // button copied a link to a different view than the one on screen. Saying so
-  // here covers every entry point, present and future, instead of asking each
-  // caller to remember.
-  document.dispatchEvent(new CustomEvent('hm-storm:open', { detail: { landfall } }));
-  stickyHeader.innerHTML = '';
-  body.innerHTML = `
-    <div class="storm-loading-state" role="status" aria-live="polite">
-      <span class="storm-loading-dot" aria-hidden="true"></span>
-      <span>${t('panel.loading')}</span>
-    </div>
-  `;
-  // Stop any running animation and drop the previous storm's overlays when
-  // switching storms — the wind-field swath otherwise outlives its checkbox,
-  // and the radar controls kept the previous storm's title.
-  stopStormOverlays();
-  // Not only through main.js's lazy loader: On This Date and the state panel's
-  // storm list import showStorm directly, and without this they rendered
-  // "NOAA NCEI data unavailable" and "no impact record is bundled" as facts
-  // while both files were still in flight.
-  await Promise.all([ensureStormsLoaded(), ensureOptionalData()]);
-  if (seq !== showStormSeq) return;
-  const storm = getStorm(landfall.storm_id);
-  if (!storm) {
+
+export function toggleStats() {
+  if (panel.hidden) {
+    render();
+    showPanel('stats-panel');
+  } else {
+    hidePanel('stats-panel');
+  }
+}
+
+function render() {
+  const stats = getStats();
+  if (!stats) {
     body.innerHTML = `
-      <div class="storm-error-state" role="alert">
-        <strong>${t('panel.errorTitle')}</strong>
-        <span>${t('panel.errorDetail')}</span>
-      </div>
-    `;
+      <div class="panel-empty-state">
+        <strong>${t('stats.unavailable')}</strong>
+        <span>${t('stats.unavailableDetail')}</span>
+      </div>`;
     return;
   }
-  await showTrack(storm.id, { focus: true });
-  if (seq !== showStormSeq) return;
-  if (radiiCount(storm) > 0) {
-    try {
-      await ensureExposureDensitiesLoaded();
-    } catch (error) {
-      console.warn('Population exposure density index unavailable:', error);
-    }
-    if (seq !== showStormSeq) return;
-  }
-  const allStorms = getAllStorms();
-  render(storm, landfall, allStorms, advisoryReplay, seq);
-}
-function render(storm, landfall, allStorms, advisoryReplay = null, renderSeq = showStormSeq) {
-  const niceName = formatStormName(storm.name);
-  const isUnnamed = !storm.name || storm.name === 'UNNAMED';
-  const heading = isUnnamed
-    ? t(storm.basin === 'AS' ? 'panel.unnamedArabianSea' : 'panel.unnamedBayOfBengal', storm.year)
-    : `${niceName} (${storm.year})`;
-  const peakCat = windToCategory(storm.peak_wind_kt);
-  const peakLabel = categoryLabel(peakCat);
-  const lfCat = storm.landfall_max_category ?? -1;
-  const lfLabel = categoryLabel(lfCat);
+  const stateRows = Object.entries(stats.by_state)
+    .map(([name, v]) => ({ name, total: v.total, hu: v.by_cat.slice(1).reduce((a, b) => a + b, 0) }))
+    .sort((a, b) => b.total - a.total);
 
-  const wikiUrl = wikipediaUrl(storm);
-  const ytUrl = youtubeUrl(storm);
-  const imdStormReportUrl = imdReportUrl(storm);
-  const imdTrackUrl = imdBestTrackUrl(storm);
-  const mosdacUrl = mosdacSatelliteUrl(storm);
+  const maxTotal = stateRows[0]?.total || 1;
+  const stateBars = stateRows.map(r => bar(r.name, r.total, maxTotal, ` (${r.hu} hurricane)`)).join('');
 
-  const radarApi = getRadar();
-  const landfallsHtml = storm.us_landfalls && storm.us_landfalls.length > 0 
-    ? storm.us_landfalls.map((lf, idx) => {
-      const cat = categoryLabel(lf.category);
-      const cls = categoryClass(lf.category);
-      const inferred = lf.inferred ? `<span class="inferred-tag" title="${escapeHtml(t('panel.inferredTitle'))}">${t('panel.inferredTag')}</span>` : '';
-      const lfWithYear = { ...lf, year: storm.year };
-      const radarBtn = radarApi.available(lfWithYear)
-        ? `<button class="radar-quick-btn" data-lf-idx="${idx}" title="${t('panel.showRadarTitle')}" aria-label="${escapeHtml(t('panel.showRadarFor', formatTime(lf.t)))}">${t('panel.radarLabel')}</button>`
-        : '';
-      return `<li>
-        <span class="where"><span class="cat-pill ${cls}">${cat}</span> ${escapeHtml(lf.state || t('state.unknown'))}${inferred}</span>
-        <span class="when">${formatTime(lf.t)}${radarBtn}</span>
-      </li>`;
-    }).join('')
-    : `<li><em style="color:var(--text-dim);">${t('panel.noLandfallsRecord')}</em></li>`;
+  const decades = Object.entries(stats.by_decade)
+    .map(([d, v]) => ({ decade: d, total: v.total, major: v.by_cat.slice(3).reduce((a, b) => a + b, 0) }))
+    .sort((a, b) => parseInt(a.decade) - parseInt(b.decade));
+  const maxDecade = Math.max(...decades.map(d => d.total));
+  const decadeBars = decades.map(d => bar(`${d.decade}s`, d.total, maxDecade, d.major ? ` (${d.major} major)` : '')).join('');
 
-  const minPres = presentPressure(storm.min_pres_mb);
+  const cat = stats.by_category;
+  const catRows = [
+    { label: `${presentCategory(-1, { style: 'short' })} / sub-hurricane`, count: cat.ts_or_below, color: '--cat-ts' },
+    { label: presentCategory(1, { style: 'long' }), count: cat.cat1, color: '--cat-1' },
+    { label: presentCategory(2, { style: 'long' }), count: cat.cat2, color: '--cat-2' },
+    { label: presentCategory(3, { style: 'long' }), count: cat.cat3, color: '--cat-3' },
+    { label: presentCategory(4, { style: 'long' }), count: cat.cat4, color: '--cat-4' },
+    { label: presentCategory(5, { style: 'long' }), count: cat.cat5, color: '--cat-5' },
+  ];
+  const maxCat = Math.max(...catRows.map(r => r.count));
+  const catBars = catRows.map(r => coloredBar(r.label, r.count, maxCat, r.color)).join('');
 
-  const ace = computeACE(storm.track);
-  // A storm that never reached tropical-storm strength at a synoptic hour has
-  // an ACE of zero, and zero is the answer. The marker is for a value that
-  // could not be computed at all.
-  const aceStr = Number.isFinite(ace.value) ? formatNumber(ace.value, 1) : MISSING_METRIC;
-  const ri = findRapidIntensification(storm.track);
-  const riBadge = ri
-    ? `<span class="storm-flag ri-flag" title="Rapid intensification: gained ${ri.delta_kt} kt in ${Math.round(ri.hours)}h (${formatTime(ri.from_t)} → ${formatTime(ri.to_t)}). NHC threshold is ≥30 kt / 24h.">${t('panel.riFlag', ri.delta_kt)}</span>`
-    : '';
-
-  const pressureFall = findPressureFall(storm.track);
-  const pfBadge = pressureFall
-    ? `<span class="storm-flag pf-flag" title="Explosive deepening: pressure dropped ${formatNumber(pressureFall.drop_mb, 0)} mb in ${Math.round(pressureFall.hours)}h (${formatTime(pressureFall.from_t)} → ${formatTime(pressureFall.to_t)}). The conventional 'explosive' threshold is ≥20 mb / 24h.">${t('panel.pressureFallFlag', formatNumber(pressureFall.drop_mb, 0))}</span>`
-    : '';
-
-  // Compute RI risk score
-  const riRisk = computeRIRiskScore(storm, allStorms);
-  const riRiskTitle = `RI Risk Score: Based on ${riRisk.similar_count} similar historical storms (peak wind ±15kt, genesis month ±1mo, first-24h gain ±10kt). ${riRisk.ri_count} of them experienced RI (≥30kt/24h). Probability: ${Math.round(riRisk.probability * 100)}%.`;
-  const riRiskIcon = riRisk.category === 'high' ? '🔴' : riRisk.category === 'medium' ? '🟡' : '🟢';
-  const riRiskTile = `<div class="stat" title="${escapeHtml(riRiskTitle)}"><div class="label">${t('panel.riRiskLabel')} <span class="metric-info">ⓘ</span></div><div class="value">${riRiskIcon} ${riRisk.category === 'high' ? t('panel.riskHigh') : riRisk.category === 'medium' ? t('panel.riskMedium') : t('panel.riskLow')}</div></div>`;
-  const exposure = estimatePopulationExposure(storm);
-  const exposureTile = renderExposureStatTile(exposure);
-
-  const transStats = computeTranslationStats(storm.track);
-  const transStr = transStats
-    ? `${formatNumber(transStats.mean_kmh, 0)} km/h <span style="font-size:11px;color:var(--subtext)">(${formatNumber(kmhToMph(transStats.mean_kmh), 0)} mph)</span>`
-    : MISSING_METRIC;
-  const transTitle = transStats
-    ? `Mean forward speed: ${formatNumber(transStats.mean_kmh, 1)} km/h. Peak: ${formatNumber(transStats.max_kmh, 0)} km/h${transStats.stalled_hours > 0 ? ` · stalled (<10 km/h) for ${formatNumber(transStats.stalled_hours, 0)} h total` : ''}.`
-    : 'Translation speed unavailable — insufficient consecutive obs.';
-
-  // Default closest-pass city: prefer one in the storm's first landfall state, else Miami.
-  const defaultCity = pickDefaultCity(storm);
-  const initialApproach = closestApproach(storm.track, defaultCity.lat, defaultCity.lon);
-  const impacts = getImpactsFor(storm.id);
-
-  // Generate storm biography
-  const biography = generateStormBiography(storm, impacts);
-
-  // Populate the sticky header with title and action buttons
-  stickyHeader.innerHTML = `
-    <div class="storm-panel-header">
-      <h2 id="storm-panel-title">${escapeHtml(heading)}</h2>
-      <div class="meta-row">
-        <span class="cat-pill ${categoryClass(lfCat)}">${t('panel.catAtLandfall', lfLabel)}</span>
-        <span>${t('panel.peakIntensityLabel')} <strong>${peakLabel}${Number.isFinite(storm.peak_wind_kt) ? ` ${storm.peak_wind_kt} kt` : ''}</strong></span>
-        <span>${storm.basin === 'AS' ? t('panel.basinArabianSea') : t('panel.basinBayOfBengal')}</span>
-        <span>${escapeHtml(storm.id)}</span>
-      </div>
-    </div>
-    <div class="panel-actions-sticky">
-      <button class="play-anim-btn" id="play-anim-btn" title="${t('panel.animateTitle')}">
-        <span class="play-icon" aria-hidden="true"></span><span class="play-label">${t('panel.playTrack')}</span>
-      </button>
-      <button class="pin-btn ${isPinned(storm.id) ? 'pinned' : ''}" id="pin-btn" title="${t('panel.pinTitle')}">
-        <span class="pin-icon">📌</span><span class="pin-label">${isPinned(storm.id) ? t('compare.pinned') : t('compare.pin')}</span>
-      </button>
-    </div>
-    <div class="panel-playback-host" id="panel-playback-host" hidden></div>
-  `;
+  const cold = (stats.cold_spot_coastal_states || [])
+    .map(s => `<span class="cold-tag">${s}</span>`).join('');
 
   body.innerHTML = `
-    <div class="storm-panel-layout">
-      <section class="storm-summary-cluster" aria-label="${t('panel.summarySection')}">
-        <div class="biography-text" lang="en">
-          <span class="content-language-note" data-content-language="en" title="${escapeHtml(t('content.englishSourceDetail'))}">${escapeHtml(t('content.englishSource'))}</span>
-          <span>${escapeHtml(biography)}</span>
-        </div>
+    <h2 id="stats-panel-title">${t('stats.title')}</h2>
+    <p class="stats-summary">
+      ${t('stats.summaryLine', stats.total_storms, stats.total_landfall_events)}
+      ${t('stats.hurricaneStrengthSuffix', stats.total_hurricane_landfalls)}
+      ${t('stats.coverageRange', stats.year_range[0], stats.year_range[1])}
+    </p>
 
-        ${riBadge || pfBadge ? `<div class="storm-flags">${riBadge}${pfBadge}</div>` : ''}
-
-        <div class="stat-grid">
-          <div class="stat"><div class="label">${t('panel.peakWind')}</div><div class="value">${formatWind(storm.peak_wind_kt)}${getSetting('windUnit') !== 'kt' ? ` <span style="font-size:11px;color:var(--subtext)">(${storm.peak_wind_kt} kt)</span>` : ''}</div></div>
-          <div class="stat"><div class="label">${t('panel.minPressure')}</div><div class="value">${minPres}</div></div>
-          <div class="stat" title="${escapeHtml(t('panel.aceTitle'))}"><div class="label">ACE <span class="metric-info">ⓘ</span></div><div class="value">${aceStr}</div></div>
-          <div class="stat" title="${escapeHtml(transTitle)}"><div class="label">${t('panel.avgForwardSpeed')} <span class="metric-info">ⓘ</span></div><div class="value">${transStr}</div></div>
-          <div class="stat"><div class="label">${t('panel.landfalls')}</div><div class="value">${storm.us_landfall_count ?? 0}</div></div>
-          ${exposureTile}
-          ${riRiskTile}
-        </div>
-
-        <div class="closest-pass-row" id="closest-pass-row">
-          <label class="closest-pass-label" for="closest-city">${t('panel.closestPassTo')}</label>
-          <select class="closest-pass-select" id="closest-city">
-            ${COASTAL_CITIES.map(c => `<option value="${escapeHtml(c.name)}"${c.name === defaultCity.name ? ' selected' : ''}>${escapeHtml(c.name)}</option>`).join('')}
-          </select>
-          <span class="closest-pass-value" id="closest-pass-value">${formatClosest(initialApproach)}</span>
-          <div class="return-periods-row" id="return-periods-row"></div>
-        </div>
-
-        ${renderImpactsBlock(storm, impacts)}
-      </section>
-
-      <section class="storm-analysis-cluster" aria-label="${t('panel.analysisSection')}">
-        <h3 class="panel-section-h3">${t('panel.similarStorms')}</h3>
-        <div class="similar-storms-host" id="similar-storms-host"></div>
-
-        <h3 class="panel-section-h3">${t('panel.daysAtIntensity')}</h3>
-        <div class="dai-host" id="dai-host"></div>
-
-        <h3 class="panel-section-h3">${t('panel.intensityOverTime')}</h3>
-        <div class="chart-host" id="chart-host"></div>
-        <div class="chart-export-row">
-          <button class="text-btn chart-export-btn" id="chart-export-png" title="${t('panel.downloadChartPng')}">⤓ PNG</button>
-          <button class="text-btn chart-export-btn" id="chart-export-svg" title="${t('panel.downloadChartSvg')}">⤓ SVG</button>
-        </div>
-      </section>
-
-      <section class="storm-resources-cluster" aria-label="${t('panel.resourcesSection')}">
-        <h3 class="panel-section-h3">${t('panel.landfallsSection')}</h3>
-        <ul class="landfall-list">${landfallsHtml}</ul>
-        <div class="radar-cache-status" id="radar-cache-status" data-storm-id="${escapeHtml(storm.id)}" role="status" aria-live="polite">${escapeHtml(t('radar.cacheChecking'))}</div>
-
-        <div class="action-row">
-          ${wikiUrl ? `<a class="action-btn primary" href="${escapeHtml(wikiUrl)}" target="_blank" rel="noopener">Wikipedia</a>` : ''}
-          ${ytUrl ? `<a class="action-btn" href="${escapeHtml(ytUrl)}" target="_blank" rel="noopener">${t('links.youtube')}</a>` : ''}
-          ${imdStormReportUrl ? `<a class="action-btn" href="${escapeHtml(imdStormReportUrl)}" target="_blank" rel="noopener">IMD storm report</a>` : ''}
-          ${imdTrackUrl ? `<a class="action-btn" href="${escapeHtml(imdTrackUrl)}" target="_blank" rel="noopener">IMD best track</a>` : ''}
-          ${mosdacUrl ? `<a class="action-btn" href="${escapeHtml(mosdacUrl)}" target="_blank" rel="noopener">MOSDAC satellite</a>` : ''}
-        </div>
-
-        <div class="export-row">
-          <span class="export-label">${t('panel.exportTrack')}:</span>
-          <button class="export-btn" data-export="csv" title="${escapeHtml(t('panel.exportCsvTitle'))}">${escapeHtml(t('btn.exportCSV'))}</button>
-          <button class="export-btn" data-export="csv_publication" title="${escapeHtml(t('panel.exportCsvPublicationTitle'))}">${t('panel.exportCsvPublication')}</button>
-          <button class="export-btn" data-export="geojson" title="${escapeHtml(t('panel.exportGeojsonTitle'))}">GeoJSON</button>
-          <button class="export-btn" data-export="kml" title="${escapeHtml(t('panel.exportKmlTitle'))}">KML</button>
-          <button class="export-btn" data-export="svg_map" title="${escapeHtml(t('panel.exportSvgMapTitle'))}">${t('panel.exportSvgMap')}</button>
-          <button class="export-btn share-btn" id="share-btn" title="${escapeHtml(t('panel.shareViewTitle'))}"><span class="share-icon">🔗</span> ${t('panel.shareView')}</button>
-        </div>
-        <section class="video-export-control" aria-labelledby="video-export-title" aria-describedby="video-export-description">
-          <h3 id="video-export-title">${t('panel.videoExport')}</h3>
-          <p id="video-export-description">${t('panel.videoExportDescription')}</p>
-          <div class="video-export-options">
-            <label for="video-export-fps">${t('panel.videoExportFps')}</label>
-            <select id="video-export-fps">
-              <option value="24">${t('panel.videoExportFpsValue', '24')}</option>
-              <option value="30" selected>${t('panel.videoExportFpsValue', '30')}</option>
-              <option value="60">${t('panel.videoExportFpsValue', '60')}</option>
-            </select>
-            <label for="video-export-duration">${t('panel.videoExportDuration')}</label>
-            <select id="video-export-duration">
-              <option value="5">${t('panel.videoExportSeconds', '5')}</option>
-              <option value="10" selected>${t('panel.videoExportSeconds', '10')}</option>
-              <option value="15">${t('panel.videoExportSeconds', '15')}</option>
-              <option value="30">${t('panel.videoExportSeconds', '30')}</option>
-            </select>
-            <button class="text-btn" id="video-export-btn" type="button" hidden>${t('panel.videoExportButton')}</button>
-          </div>
-          <p class="video-export-status" id="video-export-status" role="status" aria-live="polite"></p>
-          <p class="video-export-unavailable" id="video-export-unavailable" role="status" hidden></p>
-        </section>
-        <div id="track-timeline-host"></div>
-        <section class="advisory-replay-control" aria-labelledby="advisory-replay-title">
-          <div class="cone-retro-heading">
-            <h3 id="advisory-replay-title">${t('advisoryReplay.title')}</h3>
-            <label class="wf-toggle">
-              <input type="checkbox" id="advisory-replay-enabled">
-              <span>${t('advisoryReplay.show')}</span>
-            </label>
-          </div>
-          <p>${t('advisoryReplay.explainer')}</p>
-          <div class="advisory-replay-steps" id="advisory-replay-steps" hidden>
-            <div class="advisory-replay-nav">
-              <button type="button" class="advisory-replay-step" id="advisory-replay-prev" aria-label="${t('advisoryReplay.previous')}">◀</button>
-              <input type="range" id="advisory-replay-scrubber" min="0" max="0" value="0" step="1" aria-label="${t('advisoryReplay.scrubber')}">
-              <button type="button" class="advisory-replay-step" id="advisory-replay-next" aria-label="${t('advisoryReplay.next')}">▶</button>
-            </div>
-            <p class="advisory-replay-meta" id="advisory-replay-meta"></p>
-            <p class="advisory-replay-provenance" id="advisory-replay-provenance"></p>
-            <ul class="advisory-replay-legend">
-              <li><span class="advisory-swatch advisory-swatch--forecast"></span>${t('advisoryReplay.legendForecast')}</li>
-              <li><span class="advisory-swatch advisory-swatch--actual"></span>${t('advisoryReplay.legendActual')}</li>
-            </ul>
-            <p class="advisory-replay-discussion" id="advisory-replay-discussion"></p>
-          </div>
-          <p class="cone-retro-status" id="advisory-replay-status" role="status" aria-live="polite"></p>
-        </section>
-        <section class="cone-retro-control" aria-labelledby="cone-retro-title">
-          <div class="cone-retro-heading">
-            <h3 id="cone-retro-title">${t('coneRetro.title')}</h3>
-            <label class="wf-toggle">
-              <input type="checkbox" id="cone-retro-enabled">
-              <span>${t('coneRetro.show')}</span>
-            </label>
-          </div>
-          <div class="cone-retro-options">
-            <label for="cone-retro-era">${t('coneRetro.era')}</label>
-            <select id="cone-retro-era">
-              <option value="2015"${storm.year < 2020 ? ' selected' : ''}>2015</option>
-              <option value="2025"${storm.year >= 2020 && storm.year < 2026 ? ' selected' : ''}>2025</option>
-              <option value="2026"${storm.year >= 2026 ? ' selected' : ''}>2026</option>
-            </select>
-            <label class="wf-toggle" id="cone-retro-ellipse-toggle" hidden>
-              <input type="checkbox" id="cone-retro-ellipse">
-              <span>${t('coneRetro.ellipseToggle')}</span>
-            </label>
-          </div>
-          <p>${t('coneRetro.explainer')}</p>
-          <p class="cone-retro-status" id="cone-retro-status" role="status" aria-live="polite"></p>
+    <div class="stats-panel-layout">
+      <div class="stats-panel-column stats-panel-column--counts">
+        <section class="stats-section stats-section--states">
+          <h3>${t('stats.landfallsByState')}</h3>
+          ${stateBars}
         </section>
 
-        <section class="art-mode-control" aria-labelledby="art-mode-title">
-          <div class="cone-retro-heading">
-            <h3 id="art-mode-title">${t('art.title')}</h3>
-            <label class="wf-toggle">
-              <input type="checkbox" id="art-mode-enabled">
-              <span>${t('art.show')}</span>
-            </label>
-          </div>
-          <div class="cone-retro-options">
-            <label for="art-mode-era">${t('coneRetro.era')}</label>
-            <select id="art-mode-era" disabled>
-              <option value="2015"${storm.year < 2020 ? ' selected' : ''}>2015</option>
-              <option value="2025"${storm.year >= 2020 && storm.year < 2026 ? ' selected' : ''}>2025</option>
-              <option value="2026"${storm.year >= 2026 ? ' selected' : ''}>2026</option>
-            </select>
-          </div>
-          <p>${t('art.explainer')}</p>
-          <p class="cone-retro-status" id="art-mode-status" role="status" aria-live="polite"></p>
+        <section class="stats-section stats-section--categories">
+          <h3>${t('stats.landfallsByCategory')}</h3>
+          ${catBars}
         </section>
 
-        ${radiiCount(storm) > 0 ? `
-          <div class="wind-field-row">
-            <label class="wf-toggle" title="Show IBTrACS wind-radii swath (34/50/64 kt) along the track. Available for storms 2004+.">
-              <input type="checkbox" id="wf-cb">
-              <span>${t('panel.windSwathToggle', radiiCount(storm))}</span>
-            </label>
-          </div>
-        ` : ''}
-      </section>
+        <section class="stats-section stats-section--cold">
+          <h3>${t('stats.noHitStates')}</h3>
+          <div class="cold-list">${cold || `<span class="cold-tag">${t('stats.noColdStates')}</span>`}</div>
+          <p class="stats-note">
+            Landfalls here are detected geometrically from IBTrACS six-hourly positions,
+            so brief crossings between synoptic times can be missed.
+          </p>
+        </section>
+        <section class="stats-section stats-section--impact-coverage">
+          <h3>${t('impacts.coverageTitle')}</h3>
+          <div id="impact-coverage-summary" class="impact-coverage-summary"><span class="panel-muted">${t('panel.loading')}</span></div>
+        </section>
+      </div>
+
+      <div class="stats-panel-column stats-panel-column--decades">
+        <section class="stats-section stats-section--decades">
+          <h3>${t('stats.landfallsByDecade')}</h3>
+          ${decadeBars}
+        </section>
+      </div>
+
+      <div class="stats-panel-column stats-panel-column--charts">
+        <section class="stats-section stats-section--climatology">
+          <h3>${t('stats.climatologyChartHeading', t('stats.climatologyChart'))}</h3>
+          <div id="climatology-chart" class="clim-host"></div>
+        </section>
+
+        <section class="stats-section stats-section--climate">
+          <h3>${t('stats.climateTrendsHeading', t('stats.climateTrends'))}</h3>
+          <div id="climate-trends-chart" class="climate-trends-host"></div>
+        </section>
+      </div>
+
+      <div class="stats-panel-column stats-panel-column--trend-table">
+        <section class="stats-section stats-section--trend-table">
+          <h3>${t('stats.decadeTrends')}</h3>
+          <div id="decade-trends-chart" class="dt-host"></div>
+        </section>
+      </div>
     </div>
   `;
-  panel.scrollTop = 0;
-
-  // Render the intensity chart inline in the panel. Pass the RI window so
-  // the chart can red-tint that segment.
-  renderIntensityChart(document.getElementById('chart-host'), storm, { ri });
-
-  // Days-at-intensity stacked horizontal bar.
-  renderDaysAtIntensity(document.getElementById('dai-host'), storm.track);
-
-  // Similar storms: compute top-5 neighbors and render.
-  const similarStorms = findSimilarStorms(storm, allStorms, 5);
-  renderSimilarStorms(document.getElementById('similar-storms-host'), similarStorms, showStorm);
-  renderTrackTimeline(document.getElementById('track-timeline-host'), storm);
-  refreshRadarCacheStatus(storm.id);
-
-  wirePanelControls({
-    panel,
-    storm,
-    allStorms,
-    advisoryReplay,
-    getAnimator,
-    getRadar,
-    enterPlaybackMapMode,
-    leavePlaybackMapMode,
+  // Async-render the climatology chart and decade trends after the synchronous stats are mounted.
+  const climHost = document.getElementById('climatology-chart');
+  if (climHost) renderClimatologyChart(climHost).catch(e => {
+      climHost.innerHTML = `<p class="panel-inline-error">${t('stats.climatologyUnavailable', escapeHtml(e.message || t('stats.unknownError')))}</p>`;
   });
-}
+  
+  const dtHost = document.getElementById('decade-trends-chart');
+  if (dtHost) renderDecadeTrends(dtHost).catch(e => {
+    dtHost.innerHTML = `<p class="panel-inline-error">${t('stats.decadeUnavailable', escapeHtml(e.message || t('stats.unknownError')))}</p>`;
+  });
 
-// Map an Indian coastal state/UT to a representative city in COASTAL_CITIES so
-// the closest-pass selector defaults to a relevant city for the storm at hand.
-const STATE_TO_CITY = {
-  'West Bengal': 'Kolkata, WB',
-  'Odisha': 'Puri, OD',
-  'Andhra Pradesh': 'Visakhapatnam, AP',
-  'Tamil Nadu': 'Chennai, TN',
-  'Puducherry': 'Puducherry, PY',
-  'Andaman and Nicobar Islands': 'Port Blair, AN',
-  'Kerala': 'Kochi, KL',
-  'Karnataka': 'Mangaluru, KA',
-  'Goa': 'Panaji, GA',
-  'Maharashtra': 'Mumbai, MH',
-  'Gujarat': 'Porbandar, GJ',
-  'Dadra and Nagar Haveli and Daman and Diu': 'Surat, GJ',
-  'Lakshadweep': 'Kochi, KL',
-};
-
-function pickDefaultCity(storm) {
-  const firstLf = storm.us_landfalls && storm.us_landfalls[0];
-  const cityName = firstLf ? STATE_TO_CITY[firstLf.state] : null;
-  if (cityName) {
-    const c = COASTAL_CITIES.find(x => x.name === cityName);
-    if (c) return c;
+  const ctHost = document.getElementById('climate-trends-chart');
+  if (ctHost) {
+    ctHost.innerHTML = `<p class="panel-muted">${t('stats.climateTrendsLoading')}</p>`;
+    ensureStormsLoaded().then(() => {
+      if (!ctHost.isConnected) return;
+      const trends = computeClimateTrends(getAllStorms());
+      if (trends) renderClimateTrendsChart(ctHost, trends);
+      else ctHost.innerHTML = `<p class="panel-muted">${t('stats.noTrendData')}</p>`;
+    }).catch(e => {
+      if (ctHost.isConnected) {
+        ctHost.innerHTML = `<p class="panel-inline-error">${t('stats.climateTrendsUnavailable', escapeHtml(e.message || t('stats.unknownError')))}</p>`;
+      }
+    });
   }
-  return storm.basin === 'AS'
-    ? COASTAL_CITIES.find(x => x.name === 'Mumbai, MH') || COASTAL_CITIES[0]
-    : COASTAL_CITIES.find(x => x.name === 'Puri, OD') || COASTAL_CITIES[0];
+
+  const impactHost = document.getElementById('impact-coverage-summary');
+  if (impactHost) {
+    ensureStormsLoaded().then(() => {
+      if (!impactHost.isConnected) return;
+      impactHost.innerHTML = renderImpactCoverage(
+        summarizeImpactCoverage(getAllStorms(), stormId => Boolean(getImpactsFor(stormId))),
+      );
+    }).catch(() => {
+      if (impactHost.isConnected) impactHost.textContent = t('impacts.coverageUnavailable');
+    });
+  }
+
+  // The NOAA CPC / CSU seasonal outlook was an Atlantic-hurricane product and
+  // has no North Indian Ocean equivalent, so the card is no longer rendered.
+
 }
 
-function renderExposureStatTile(exposure) {
-  if (!exposure?.available) return '';
-  const tooltip = formatExposureTooltip(exposure);
+function renderImpactCoverage(coverage) {
+  const percent = coverage.total ? Math.round(coverage.covered / coverage.total * 100) : 0;
   return `
-    <div class="stat" title="${escapeHtml(tooltip)}">
-      <div class="label">${t('panel.estExposure')} <span class="metric-info">ⓘ</span></div>
-      <div class="value">${formatExposurePeople(exposure.headline_people)} <span style="font-size:11px;color:var(--subtext)">${t('panel.exposureWinds', escapeHtml(exposure.headline_label))}</span></div>
-    </div>
-  `;
+    <p>${t('impacts.coverageSummary', coverage.covered, coverage.total, percent)}</p>
+    <p class="stats-note">${t('impacts.missingMeaning')}</p>
+    <details>
+      <summary>${t('impacts.showByYear')}</summary>
+      <div class="impact-coverage-table-wrap">
+        <table class="impact-coverage-table">
+          <thead><tr><th>${t('impacts.year')}</th><th>${t('impacts.covered')}</th><th>${t('impacts.missing')}</th></tr></thead>
+          <tbody>${coverage.years.map(row => `<tr><th>${row.year}</th><td>${row.covered}</td><td>${row.missing}</td></tr>`).join('')}</tbody>
+        </table>
+      </div>
+    </details>`;
 }
 
-
-
-/** USGS high-water-mark toggle — only for storms with preprocessed marks. */
-async function renderHwmRow(host, storm) {
-  if (!host) return;
-  const info = await hwmInfo(storm.id);
-  if (!info) return;
-  host.innerHTML = `
-    <div class="wind-field-row">
-      <label class="wf-toggle" title="${t('hwm.tooltip')}">
-        <input type="checkbox" id="hwm-cb">
-        <span>🌊 ${t('hwm.toggle', info.count)}</span>
-      </label>
-    </div>`;
-  host.querySelector('#hwm-cb').addEventListener('change', async event => {
-    if (!event.target.checked) return hideHwm();
-    // Nothing drawn means the box comes back up rather than claiming an overlay.
-    if (!await showHwm(storm.id)) event.target.checked = false;
-  });
+function bar(label, count, max, suffix = '') {
+  const pct = Math.round((count / max) * 100);
+  return `<div class="bar-row" title="${label}: ${count}${suffix}">
+    <span class="label">${label}</span>
+    <span class="bar"><span class="fill" style="width:${pct}%"></span></span>
+    <span class="count">${count}</span>
+  </div>`;
 }
 
-let rainfallPromise = null;
-function loadRainfall() {
-  if (!rainfallPromise) {
-    rainfallPromise = fetchWithTimeout('./data/rainfall.json', {}, REQUEST_TIMEOUT_MS.data)
-      .then(res => res.ok ? res.json() : null)
-      .catch(() => null);
+function coloredBar(label, count, max, cssVar) {
+  const pct = Math.round((count / max) * 100);
+  return `<div class="bar-row">
+    <span class="label">${label}</span>
+    <span class="bar"><span class="fill" style="width:${pct}%;background:var(${cssVar})"></span></span>
+    <span class="count">${count}</span>
+  </div>`;
+}
+
+function renderClimateTrendsChart(host, trends) {
+  if (!trends || !trends.rolling || trends.rolling.length === 0) {
+    host.innerHTML = `<p class="panel-muted">${t('stats.noRollingTrendData')}</p>`;
+    return;
   }
-  return rainfallPromise;
-}
 
-async function renderRainfallBlock(host, storm) {
-  if (!host) return;
-  const data = await loadRainfall();
-  if (!data) return;
-  const rec = data[storm.id];
-  if (!rec) return;
-  host.innerHTML = `
-    <div class="panel-info-card">
-      <div class="info-card-label">Peak rainfall (WPC)</div>
-      <div class="info-card-value">${rec.peak_inches}" at ${escapeHtml(rec.station)}</div>
-      <div class="info-card-source">${t('panel.infoSource')} <a href="https://www.wpc.ncep.noaa.gov/tropical/rain/tcrainfall.html" target="_blank" rel="noopener">NOAA WPC TC Rainfall</a></div>
-    </div>
+  const data = trends.rolling;
+  const width = 800, height = 280;
+  const margin = { top: 10, right: 20, bottom: 40, left: 50 };
+  const plotW = width - margin.left - margin.right;
+  const plotH = height - margin.top - margin.bottom;
+
+  const years = data.map(d => d.year);
+  const minYear = Math.min(...years);
+  const maxYear = Math.max(...years);
+  const xScale = (year) => ((year - minYear) / (maxYear - minYear)) * plotW;
+
+  const maxLandfalls = Math.max(...data.map(d => d.rolling_avg_landfalls || 0));
+  const maxACE = Math.max(...data.map(d => d.rolling_avg_ace || 0));
+  const maxSpeed = Math.max(...data.map(d => d.rolling_avg_speed || 0));
+
+  const yScaleLF = (val) => plotH - (val / (maxLandfalls || 1)) * plotH * 0.8;
+  const yScaleACE = (val) => plotH - (val / (maxACE || 1)) * plotH * 0.8;
+  const yScaleSpeed = (val) => plotH - (val / (maxSpeed || 1)) * plotH * 0.8;
+
+  // Three polylines: landfalls (blue), ACE (lavender), forward speed (green).
+  // `points` takes a bare coordinate list. An `L` between pairs is `path`
+  // syntax, and one in here makes the SVG parser reject the whole attribute,
+  // so the curve silently does not draw.
+  const lfPath = data.map((d) => `${margin.left + xScale(d.year)},${margin.top + yScaleLF(d.rolling_avg_landfalls)}`).join(' ');
+  const acePath = data.map((d) => `${margin.left + xScale(d.year)},${margin.top + yScaleACE(d.rolling_avg_ace)}`).join(' ');
+  const speedPath = data.map((d) => `${margin.left + xScale(d.year)},${margin.top + yScaleSpeed(d.rolling_avg_speed)}`).join(' ');
+
+  const svg = `
+    <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" style="background:var(--mantle);border-radius:8px;border:1px solid var(--surface0);">
+      <defs>
+        <style>
+          .ct-line { fill: none; stroke-width: 2.5; vector-effect: non-scaling-stroke; }
+          .ct-landfalls { stroke: var(--ink-link); }
+          .ct-ace { stroke: var(--ink-accent); }
+          .ct-speed { stroke: var(--cat-1); }
+          .ct-axis { stroke: var(--surface0); stroke-width: 1; }
+          .ct-label { font-size: 11px; fill: var(--subtext); }
+          .ct-title { font-size: 12px; fill: var(--text); font-weight: 600; }
+        </style>
+      </defs>
+      
+      <!-- Y axes -->
+      <line x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${height - margin.bottom}" class="ct-axis" />
+      <line x1="${margin.left}" y1="${height - margin.bottom}" x2="${width - margin.right}" y2="${height - margin.bottom}" class="ct-axis" />
+      
+      <!-- Grid lines for Y -->
+      <line x1="${margin.left}" y1="${margin.top + plotH * 0.5}" x2="${width - margin.right}" y2="${margin.top + plotH * 0.5}" class="ct-axis" opacity="0.2" />
+      
+      <!-- Polylines -->
+      <polyline points="${lfPath}" class="ct-line ct-landfalls" />
+      <polyline points="${acePath}" class="ct-line ct-ace" />
+      <polyline points="${speedPath}" class="ct-line ct-speed" />
+      
+      <!-- Y-axis labels -->
+      <text x="${margin.left - 8}" y="${margin.top + 4}" class="ct-label" text-anchor="end" dominant-baseline="middle">${t('stats.high')}</text>
+      <text x="${margin.left - 8}" y="${margin.top + plotH}" class="ct-label" text-anchor="end" dominant-baseline="middle">${t('stats.low')}</text>
+      
+      <!-- Legend -->
+      <circle cx="${margin.left + 12}" cy="12" r="3" class="ct-landfalls" style="fill:var(--ink-link);" />
+      <text x="${margin.left + 22}" y="16" class="ct-label">${t('stats.landfallsLegend')}</text>
+      
+      <circle cx="${margin.left + 120}" cy="12" r="3" style="fill:var(--ink-accent);" />
+      <text x="${margin.left + 130}" y="16" class="ct-label">ACE</text>
+      
+      <circle cx="${margin.left + 170}" cy="12" r="3" style="fill:var(--cat-1);" />
+      <text x="${margin.left + 180}" y="16" class="ct-label">${t('stats.forwardSpeed')}</text>
+    </svg>
   `;
+
+  host.innerHTML = svg;
+  
+  // Add a small text summary of trends
+  const trendDir = (slope) => (slope > 0 ? t('stats.trendIncreasing') : slope < 0 ? t('stats.trendDecreasing') : t('stats.trendStable'));
+  const summary = `
+    <p class="trend-summary">
+      <strong>${t('stats.trendDirectionLabel')}</strong><br/>
+      Landfalls: ${trendDir(trends.trends.landfalls_slope)} · 
+      ACE: ${trendDir(trends.trends.ace_slope)} · 
+      Speed: ${trendDir(trends.trends.speed_slope)}
+    </p>
+  `;
+  host.innerHTML += summary;
 }
