@@ -377,9 +377,10 @@ async function boot() {
   deferNonCritical(() => {
     loadState().then(({ enableStateClicks }) => enableStateClicks(map)).catch(() => { /* non-fatal */ });
   });
-  deferNonCritical(() => {
-    lazyStartActiveStormPolling();
-  });
+  // Live active-storm polling is NHC/Atlantic-only (CurrentStorms.json plus the
+  // outlook card it drives). No equivalent CORS-open IMD feed exists for the
+  // North Indian Ocean, so the cards only ever rendered a retry error here.
+
   deferNonCritical(async () => {
     const { initSpatialSearch } = await loadSpatialSearch();
     initSpatialSearch((lf) => onLandfallClick(lf, null));
